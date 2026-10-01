@@ -340,14 +340,14 @@
   function setRankingPeriod(period) {
     if (state.rankingPeriod === period) return;
     state.rankingPeriod = period;
-    $('#rtab-general').setAttribute('aria-selected', String(period === 'general'));
     $('#rtab-weekly').setAttribute('aria-selected', String(period === 'weekly'));
+    $('#rtab-general').setAttribute('aria-selected', String(period === 'general'));
     state.ranking = null;
     renderRanking();
     loadRanking();
   }
-  $('#rtab-general').addEventListener('click', () => setRankingPeriod('general'));
   $('#rtab-weekly').addEventListener('click', () => setRankingPeriod('weekly'));
+  $('#rtab-general').addEventListener('click', () => setRankingPeriod('general'));
 
   function renderRanking() {
     const box = $('#ranking');
