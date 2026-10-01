@@ -309,7 +309,7 @@
     $('#poll-form').reset();
     $('#f-points').value = 10;
     $('#f-options').disabled = false;
-    $('#f-options-hint').textContent = 'De 2 a 10 opções, uma por linha.';
+    $('#f-options-hint').textContent = 'De 1 a 10 opções, uma por linha.';
     $('#form-title').textContent = 'Nova enquete';
     $('#form-submit').textContent = 'Publicar enquete';
     $('#form-cancel').hidden = true;

@@ -12,7 +12,7 @@
     ranking: null,
     rankError: null,
     view: 'polls',
-    rankingPeriod: 'general',
+    rankingPeriod: 'weekly',
     profileId: null,
     profile: null,
     profileError: null,
@@ -340,14 +340,14 @@
   function setRankingPeriod(period) {
     if (state.rankingPeriod === period) return;
     state.rankingPeriod = period;
-    $('#rtab-weekly').setAttribute('aria-selected', String(period === 'weekly'));
     $('#rtab-general').setAttribute('aria-selected', String(period === 'general'));
+    $('#rtab-weekly').setAttribute('aria-selected', String(period === 'weekly'));
     state.ranking = null;
     renderRanking();
     loadRanking();
   }
-  $('#rtab-weekly').addEventListener('click', () => setRankingPeriod('weekly'));
   $('#rtab-general').addEventListener('click', () => setRankingPeriod('general'));
+  $('#rtab-weekly').addEventListener('click', () => setRankingPeriod('weekly'));
 
   function renderRanking() {
     const box = $('#ranking');
@@ -383,7 +383,7 @@
         avatarEl(s.name, s.avatar, '', s.isHouse),
         h('span', {},
           h('span', { class: 'nm-row' },
-            h('a', { class: 'nm', href: `#perfil/${s.userId}` }, (s.isHouse ? ' ' : '') + s.name + (me ? ' (você)' : '')),
+            h('a', { class: 'nm', href: `#perfil/${s.userId}` }, (s.isHouse ? '🏠 ' : '') + s.name + (me ? ' (você)' : '')),
             badgesEl(s.badges)),
           h('span', { class: 'hits' }, s.isHouse ? 'Conta da casa' : hits)),
         h('span', { class: 'score' }, h('b', {}, s.points), ' pts'));

@@ -542,7 +542,7 @@ function parsePollInput(body, requireOptions) {
   if (requireOptions) {
     const raw = Array.isArray(body?.options) ? body.options : [];
     const options = [...new Set(raw.map((o) => String(o).trim()).filter(Boolean))];
-    if (options.length < 2 || options.length > 10) return { error: 'Informe de 2 a 10 opções diferentes.' };
+    if (options.length < 1 || options.length > 10) return { error: 'Informe de 1 a 10 opções diferentes.' };
     if (options.some((o) => o.length > 100)) return { error: 'Cada opção pode ter no máximo 100 caracteres.' };
     out.options = options.map((text) => ({ id: uid(), text }));
   }
