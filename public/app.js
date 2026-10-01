@@ -328,7 +328,7 @@
   /* ---------- Ranking ---------- */
   async function loadRanking() {
     try {
-      const path = state.rankingPeriod === 'ranking' ? '/api/ranking/weekly' : '/api/ranking';
+      const path = state.rankingPeriod === 'weekly' ? '/api/ranking/weekly' : '/api/ranking';
       state.ranking = await api(path);
       state.rankError = null;
     } catch (e) {
