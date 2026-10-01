@@ -219,6 +219,12 @@ async function fetchVotes(pollIds) {
   return byPoll;
 }
 
+// Chave geral das notificações de enquete nova (ligada por padrão; só '0' desliga)
+async function getNotifyEnabled() {
+  const { rows } = await q("select value from settings where key = 'notify_enabled'");
+  return !(rows[0] && rows[0].value === '0');
+}
+
 async function getMode() {
   const { rows } = await q("select value from settings where key = 'mode'");
   return rows[0] && rows[0].value === 'accumulate' ? 'accumulate' : 'replace';
@@ -315,8 +321,8 @@ async function getStreakRule() {
    zerado depois. Editar um nível existente atualiza como ele aparece pra quem já
    tem o emblema; apagar um nível remove o emblema de quem tinha (cascade). */
 async function fetchAchievementDefs() {
-  const { rows } = await q('select id, type, threshold, label, emoji, image_url from achievement_defs order by type, threshold');
-  return rows.map((r) => ({ id: r.id, type: r.type, threshold: r.threshold, label: r.label, emoji: r.emoji, imageUrl: r.image_url }));
+  const { rows } = await q("select id, type, threshold, label, emoji, image_url, active from achievement_defs order by array_position(array['points','streak','misses','missstreak'], type), threshold");
+  return rows.map((r) => ({ id: r.id, type: r.type, threshold: r.threshold, label: r.label, emoji: r.emoji, imageUrl: r.image_url, active: r.active }));
 }
 const nextTier = (defsOfType, current) => {
   const next = defsOfType.find((t) => t.threshold > current);
@@ -330,11 +336,15 @@ const nextTier = (defsOfType, current) => {
 async function syncAchievements(list, defs) {
   const pointDefs = defs.filter((d) => d.type === 'points');
   const streakDefs = defs.filter((d) => d.type === 'streak');
+  const missDefs = defs.filter((d) => d.type === 'misses');
+  const missStreakDefs = defs.filter((d) => d.type === 'missstreak');
   const userIds = [];
   const defIds = [];
   for (const s of list) {
     for (const t of pointDefs) if (s.points >= t.threshold) { userIds.push(s.userId); defIds.push(t.id); }
     for (const t of streakDefs) if (s.bestStreak >= t.threshold) { userIds.push(s.userId); defIds.push(t.id); }
+    for (const t of missDefs) if (s.misses >= t.threshold) { userIds.push(s.userId); defIds.push(t.id); }
+    for (const t of missStreakDefs) if (s.bestMissStreak >= t.threshold) { userIds.push(s.userId); defIds.push(t.id); }
   }
   if (userIds.length) {
     await q(
@@ -355,7 +365,10 @@ async function syncAchievements(list, defs) {
     if (!byUser.has(r.user_id)) byUser.set(r.user_id, []);
     byUser.get(r.user_id).push({ ...meta, unlockedAt: iso(r.unlocked_at) });
   }
-  for (const arr of byUser.values()) arr.sort((a, b) => a.threshold - b.threshold);
+  const typeOrder = ['points', 'streak', 'misses', 'missstreak'];
+  for (const arr of byUser.values()) {
+    arr.sort((a, b) => typeOrder.indexOf(a.type) - typeOrder.indexOf(b.type) || a.threshold - b.threshold);
+  }
   return byUser;
 }
 
@@ -405,6 +418,9 @@ async function computeStandings() {
     played: 0,
     streak: 0,
     bestStreak: 0,
+    misses: 0,
+    missStreak: 0,
+    bestMissStreak: 0,
     bonus: 0,
     history: [],
   }]));
@@ -418,6 +434,7 @@ async function computeStandings() {
       s.hits += 1;
       s.points += r.points;
       s.streak += 1;
+      s.missStreak = 0;
       s.bestStreak = Math.max(s.bestStreak, s.streak);
       if (rule.every > 0 && s.streak % rule.every === 0) {
         bonus = rule.bonus;
@@ -426,6 +443,9 @@ async function computeStandings() {
       }
     } else {
       s.streak = 0;
+      s.misses += 1;
+      s.missStreak += 1;
+      s.bestMissStreak = Math.max(s.bestMissStreak, s.missStreak);
     }
     s.history.push({
       title: r.poll_title,
@@ -450,21 +470,21 @@ async function computeStandings() {
 
   const achByUser = await syncAchievements(list, achDefs);
   for (const s of list) {
-    const achs = achByUser.get(s.userId) || [];
+    const achs = (achByUser.get(s.userId) || []).filter((a) => a.active); // níveis ocultos não aparecem
     s.achievements = achs;
     const topOf = (type) => {
       const of = achs.filter((a) => a.type === type);
       return of.length ? of[of.length - 1] : null; // já vem ordenado do menor pro maior nível
     };
-    s.badges = { points: topOf('points'), streak: topOf('streak') };
+    s.badges = { points: topOf('points'), streak: topOf('streak'), misses: topOf('misses'), missstreak: topOf('missstreak') };
   }
 
   return {
     ranking: list,
     resolved: rounds.rows[0].n,
     rule,
-    pointTiers: achDefs.filter((d) => d.type === 'points'),
-    streakTiers: achDefs.filter((d) => d.type === 'streak'),
+    pointTiers: achDefs.filter((d) => d.active && d.type === 'points'),
+    streakTiers: achDefs.filter((d) => d.active && d.type === 'streak'),
     resetAt: generalResetAt,
   };
 }
@@ -821,12 +841,14 @@ app.get('/api/ranking/weekly', wrap(async (req, res) => {
 
 /* Perfil público: só mostra enquetes já resolvidas, então não revela palpites em aberto */
 app.get('/api/users/:id/profile', wrap(async (req, res) => {
-  const st = await computeStandings();
+  const [st, wk] = await Promise.all([computeStandings(), computeWeeklyStandings()]);
   const found = st.ranking.find((r) => r.userId === req.params.id);
   if (!found) return res.status(404).json({ error: 'Participante não encontrado.' });
+  const weekly = wk.ranking.find((r) => r.userId === req.params.id);
   const { history, ...stats } = found;
   res.json({
     ...stats,
+    weekly: { position: weekly ? weekly.position : null, points: weekly ? weekly.points : 0 },
     accuracy: stats.played ? Math.round((stats.hits / stats.played) * 100) : 0,
     rule: st.rule,
     nextPoints: nextTier(st.pointTiers, stats.points),
@@ -865,6 +887,8 @@ app.get('/api/admin/polls', requireAdmin, wrap(async (req, res) => {
     users: users.rows[0].n,
     mode: await getMode(),
     streak: await getStreakRule(),
+    notify: await getNotifyEnabled(),
+    pushEnabled: PUSH_ENABLED,
   });
 }));
 
@@ -890,7 +914,11 @@ app.post('/api/admin/polls', requireAdmin, wrap(async (req, res) => {
       await c.query('insert into poll_options (id, poll_id, label, position) values ($1, $2, $3, $4)', [o.id, id, o.text, i]);
     }
   });
-  notifyNewPoll(input.title).catch((e) => console.error('Notificação push falhou:', e.message));
+  // Só notifica se a chave geral estiver ligada E esta enquete não tiver sido publicada "sem avisar"
+  const wantsNotify = req.body?.notify !== false;
+  if (wantsNotify && (await getNotifyEnabled())) {
+    notifyNewPoll(input.title).catch((e) => console.error('Notificação push falhou:', e.message));
+  }
   res.status(201).json({ id });
 }));
 
@@ -1109,9 +1137,14 @@ app.post('/api/admin/ranking/reset-general', requireAdmin, wrap(async (req, res)
 }));
 
 app.post('/api/admin/settings', requireAdmin, wrap(async (req, res) => {
-  const { mode, streakEvery, streakBonus } = req.body || {};
+  const { mode, streakEvery, streakBonus, notify } = req.body || {};
   const entries = [];
   let rankingChanged = false;
+
+  if (notify !== undefined) {
+    if (typeof notify !== 'boolean') return res.status(400).json({ error: 'Valor de notificação inválido.' });
+    entries.push(['notify_enabled', notify ? '1' : '0']);
+  }
 
   if (mode !== undefined) {
     if (mode !== 'replace' && mode !== 'accumulate') return res.status(400).json({ error: 'Modo inválido.' });
@@ -1145,7 +1178,7 @@ app.get('/api/admin/achievements', requireAdmin, wrap(async (req, res) => {
 
 function parseAchievementInput(body) {
   const type = body?.type;
-  if (type !== 'points' && type !== 'streak') return { error: 'Tipo inválido: use pontos ou sequência.' };
+  if (!['points', 'streak', 'misses', 'missstreak'].includes(type)) return { error: 'Tipo de conquista inválido.' };
   const threshold = Number(body?.threshold);
   if (!Number.isInteger(threshold) || threshold < 1 || threshold > 100000) {
     return { error: 'A meta precisa ser um número inteiro maior que 0.' };
@@ -1167,8 +1200,8 @@ app.post('/api/admin/achievements', requireAdmin, wrap(async (req, res) => {
   if (input.error) return res.status(400).json({ error: input.error });
   const id = uid();
   await q(
-    'insert into achievement_defs (id, type, threshold, label, emoji, image_url) values ($1, $2, $3, $4, $5, $6)',
-    [id, input.type, input.threshold, input.label, input.emoji, input.imageUrl]
+    'insert into achievement_defs (id, type, threshold, label, emoji, image_url, active) values ($1, $2, $3, $4, $5, $6, $7)',
+    [id, input.type, input.threshold, input.label, input.emoji, input.imageUrl, !['misses', 'missstreak'].includes(input.type)]
   );
   broadcast();
   res.status(201).json({ id });
@@ -1181,6 +1214,14 @@ app.put('/api/admin/achievements/:id', requireAdmin, wrap(async (req, res) => {
     'update achievement_defs set type = $2, threshold = $3, label = $4, emoji = $5, image_url = $6 where id = $1',
     [req.params.id, input.type, input.threshold, input.label, input.emoji, input.imageUrl]
   );
+  if (!r.rowCount) return res.status(404).json({ error: 'Nível não encontrado.' });
+  broadcast();
+  res.json({ ok: true });
+}));
+
+app.post('/api/admin/achievements/:id/active', requireAdmin, wrap(async (req, res) => {
+  if (typeof req.body?.active !== 'boolean') return res.status(400).json({ error: 'Informe active como true ou false.' });
+  const r = await q('update achievement_defs set active = $2 where id = $1', [req.params.id, req.body.active]);
   if (!r.rowCount) return res.status(404).json({ error: 'Nível não encontrado.' });
   broadcast();
   res.json({ ok: true });

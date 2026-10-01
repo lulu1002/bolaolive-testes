@@ -54,6 +54,11 @@
             <label class="aopt"><input type="radio" name="mode" value="accumulate"><span>Acumular com as anteriores</span></label>
             <span class="hint">Enquetes substituídas saem da página, mas continuam aqui no painel e valem pontos quando você define a resposta.</span>
           </fieldset>
+          <fieldset class="modes">
+            <legend>Notificações de enquete nova</legend>
+            <label class="aopt"><input type="checkbox" id="notify-global"><span>Avisar os inscritos quando uma enquete for publicada</span></label>
+            <span class="hint" id="notify-global-hint">Chave geral: desligada, nenhuma publicação envia notificação, mesmo com a caixa da enquete marcada.</span>
+          </fieldset>
           <form id="poll-form">
             <div class="field">
               <label for="f-title">Pergunta</label>
@@ -76,6 +81,10 @@
               <label for="f-closes">Votação encerra em (opcional)</label>
               <input id="f-closes" type="datetime-local">
               <span class="hint">Sem data, a votação fica aberta até você encerrar.</span>
+            </div>
+            <div class="field" id="f-notify-field">
+              <label class="aopt"><input type="checkbox" id="f-notify" checked><span>Notificar os inscritos ao publicar esta enquete</span></label>
+              <span class="hint" id="f-notify-hint">Desmarque para publicar sem avisar ninguém.</span>
             </div>
             <p class="error" id="form-error" role="alert"></p>
             <div class="actions">
@@ -148,7 +157,7 @@
       <div id="apane-ach" role="tabpanel" aria-labelledby="atab-ach" hidden>
       <section class="panel" id="ach-panel">
         <h2>Conquistas</h2>
-        <p class="hint">Níveis de emblema por total de pontos ou por sequência de acertos seguidos. Quem já desbloqueou mantém o emblema pra sempre, mesmo que você edite ou zere o ranking depois — só apagar o nível remove o emblema de quem tinha.</p>
+        <p class="hint">Níveis de emblema por total de pontos, sequência de acertos seguidos, total de erros ou sequência de erros seguidos (as duas últimas são as conquistas negativas). Quem já desbloqueou mantém o emblema pra sempre, mesmo que você edite ou zere o ranking depois — só apagar o nível remove o emblema de quem tinha. O botão Ocultar esconde o nível do site sem apagar nada: ao mostrar de novo, quem já tinha volta a ver o emblema.</p>
         <div class="admin-grid">
           <form id="ach-form">
             <input type="hidden" id="ach-id" value="">
@@ -162,6 +171,8 @@
                 <select id="ach-type">
                   <option value="points">Total de pontos</option>
                   <option value="streak">Sequência de acertos</option>
+                  <option value="misses">Total de erros (negativa)</option>
+                  <option value="missstreak">Sequência de erros (negativa)</option>
                 </select>
               </div>
               <div class="field">

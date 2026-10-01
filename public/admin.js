@@ -2,7 +2,7 @@
   'use strict';
 
   const $ = (sel, root = document) => root.querySelector(sel);
-  const state = { polls: [], users: 0, editing: null, mode: 'replace', streak: { every: 0, bonus: 0 }, house: [], houseEditing: null, achievements: [], achEditing: null };
+  const state = { polls: [], users: 0, editing: null, mode: 'replace', streak: { every: 0, bonus: 0 }, notify: true, pushEnabled: true, house: [], houseEditing: null, achievements: [], achEditing: null };
 
   /* ---------- Utilidades ---------- */
   function h(tag, attrs = {}, ...children) {
@@ -122,7 +122,10 @@
       state.users = data.users;
       state.mode = data.mode;
       state.streak = data.streak;
+      state.notify = data.notify;
+      state.pushEnabled = data.pushEnabled;
       renderMode();
+      renderNotify();
       renderStreak();
       renderList();
       loadHouse();
@@ -314,6 +317,8 @@
     $('#form-submit').textContent = 'Publicar enquete';
     $('#form-cancel').hidden = true;
     $('#form-error').textContent = '';
+    $('#f-notify-field').hidden = false;
+    renderNotify();
   }
 
   function startEdit(p) {
@@ -325,6 +330,7 @@
     $('#f-options-hint').textContent = 'As opções não podem ser alteradas depois de publicar.';
     $('#f-points').value = p.points;
     $('#f-closes').value = toLocalInput(p.closesAt);
+    $('#f-notify-field').hidden = true; // editar não envia notificação
     $('#form-title').textContent = 'Editar enquete';
     $('#form-submit').textContent = 'Salvar alterações';
     $('#form-cancel').hidden = false;
@@ -346,7 +352,10 @@
       closesAt: closes ? new Date(closes).toISOString() : null,
     };
     const editing = state.editing;
-    if (!editing) body.options = $('#f-options').value.split('\n');
+    if (!editing) {
+      body.options = $('#f-options').value.split('\n');
+      body.notify = $('#f-notify').checked;
+    }
 
     const submit = $('#form-submit');
     submit.disabled = true;
@@ -356,7 +365,7 @@
         toast('Alterações salvas');
       } else {
         await api('/api/admin/polls', { method: 'POST', body });
-        toast('Enquete publicada');
+        toast(body.notify && state.notify && state.pushEnabled ? 'Enquete publicada e inscritos avisados' : 'Enquete publicada (sem notificação)');
       }
       resetForm();
       await loadPolls();
@@ -365,6 +374,34 @@
       else $('#form-error').textContent = err.message;
     } finally {
       submit.disabled = false;
+    }
+  });
+
+  /* ---------- Notificações: chave geral e caixa por enquete ---------- */
+  function renderNotify() {
+    const g = $('#notify-global');
+    g.checked = state.notify;
+    g.disabled = !state.pushEnabled;
+    $('#notify-global-hint').textContent = state.pushEnabled
+      ? 'Chave geral: desligada, nenhuma publicação envia notificação, mesmo com a caixa da enquete marcada.'
+      : 'As notificações push não estão configuradas neste servidor (faltam as chaves VAPID).';
+    const f = $('#f-notify');
+    f.disabled = !state.pushEnabled || !state.notify;
+    $('#f-notify-hint').textContent = !state.pushEnabled || !state.notify
+      ? 'Desativado: as notificações estão desligadas na chave geral acima.'
+      : 'Desmarque para publicar sem avisar ninguém.';
+  }
+
+  $('#notify-global').addEventListener('change', async (e) => {
+    const value = e.target.checked;
+    try {
+      await api('/api/admin/settings', { method: 'POST', body: { notify: value } });
+      state.notify = value;
+      renderNotify();
+      toast(value ? 'Notificações de enquete nova ligadas' : 'Notificações de enquete nova desligadas');
+    } catch (err) {
+      renderNotify();
+      handleError(err);
     }
   });
 
@@ -524,10 +561,14 @@
       box.append(h('p', { class: 'hint' }, 'Nenhum nível cadastrado ainda.'));
       return;
     }
-    const typeLabel = { points: 'pontos', streak: 'sequência' };
-    box.append(...state.achievements.map((a) => h('div', { class: 'house-row' },
+    const typeLabel = { points: 'pontos', streak: 'acertos seguidos', misses: 'erros', missstreak: 'erros seguidos' };
+    box.append(...state.achievements.map((a) => h('div', { class: 'house-row', style: a.active ? '' : 'opacity: 0.55' },
       achIcon(a),
-      h('span', { class: 'nm' }, `${a.label} — ${a.threshold} ${typeLabel[a.type]}`),
+      h('span', { class: 'nm' }, `${a.label} — ${a.threshold} ${typeLabel[a.type]}${a.active ? '' : ' (oculta)'}`),
+      h('button', {
+        class: 'btn ghost small', type: 'button',
+        onclick: () => toggleAch(a),
+      }, a.active ? 'Ocultar' : 'Mostrar'),
       h('button', { class: 'btn ghost small', type: 'button', onclick: () => startEditAch(a) }, 'Editar'),
       h('button', { class: 'btn danger small', type: 'button', onclick: () => removeAch(a) }, 'Remover'))));
   }
@@ -556,6 +597,13 @@
   }
 
   $('#ach-cancel').addEventListener('click', resetAchForm);
+
+  function toggleAch(a) {
+    act(
+      () => api(`/api/admin/achievements/${a.id}/active`, { method: 'POST', body: { active: !a.active } }),
+      a.active ? 'Conquista oculta para os participantes' : 'Conquista visível para os participantes'
+    ).then(loadAchievements);
+  }
 
   function removeAch(a) {
     if (!confirm(`Remover o nível "${a.label}"? Quem já tinha esse emblema perde ele.`)) return;
