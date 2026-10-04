@@ -27,6 +27,7 @@
 
   <main class="wrap main">
     <section id="view-polls" role="tabpanel" aria-labelledby="tab-polls">
+      <div class="subtabs" id="topic-tabs" role="tablist" aria-label="Tópicos das enquetes" hidden></div>
       <div id="polls" class="polls" aria-live="polite">
         <p class="note">Carregando enquetes…</p>
       </div>
@@ -36,7 +37,8 @@
       <div class="subtabs" role="tablist" aria-label="Período do ranking">
         <button type="button" role="tab" id="rtab-weekly" aria-selected="true">Semanal</button>
         <button type="button" role="tab" id="rtab-general" aria-selected="false">Geral</button>
-        <button type="button" role="tab" id="rtab-hall" aria-selected="false" hidden>Pikas Da semana (lá ele)</button>
+        <button type="button" role="tab" id="rtab-hall" aria-selected="false" hidden>Hall da fama</button>
+        <button type="button" role="tab" id="rtab-prizes" aria-selected="false" hidden>Prêmios</button>
       </div>
       <div id="ranking"></div>
     </section>

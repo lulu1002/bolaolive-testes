@@ -317,7 +317,10 @@ input:disabled, textarea:disabled { background: rgba(255, 255, 255, 0.5); color:
 }
 
 /* ---------- Sub-abas (Geral / Semanal) ---------- */
-.subtabs { display: flex; gap: 0.4rem; margin: 1rem 0 0; }
+.subtabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 1rem 0 0; }
+.admin-subtabs { margin: 0.75rem 0 1rem; }
+#topics-panel { margin-top: 1.5rem; }
+#topics-panel summary { cursor: pointer; font-weight: 800; }
 .subtabs button {
   padding: 0.4rem 0.9rem;
   border: 2px solid var(--ink);
@@ -329,7 +332,7 @@ input:disabled, textarea:disabled { background: rgba(255, 255, 255, 0.5); color:
   cursor: pointer;
   transition: transform 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
-.subtabs button[hidden] { display: none; }
+.subtabs[hidden], .subtabs button[hidden] { display: none; }
 .subtabs button[aria-selected="true"] { background: var(--ink); color: var(--ticket); }
 .subtabs button:hover { transform: scale(1.05); }
 
@@ -368,6 +371,9 @@ a.nm:hover { text-decoration: underline; }
 .nm-row .nm { display: inline; }
 .badges { display: inline-flex; gap: 0.15rem; line-height: 1; }
 .badge { font-size: 1.05rem; }
+.badge.prize { filter: drop-shadow(0 0 3px rgba(240, 180, 0, 0.9)); }
+.ach.prize { border-color: #c99700; background: #fff8dc; }
+.ach.prize.free { opacity: 0.8; border-style: dashed; }
 .badge-img { width: 18px; height: 18px; border-radius: 3px; object-fit: cover; vertical-align: middle; }
 .hits { display: block; font-size: 0.875rem; color: var(--ink-soft); }
 .score { white-space: nowrap; }
@@ -389,6 +395,7 @@ dialog::backdrop { background: rgba(20, 35, 122, 0.55); }
 .dlg .poll-name { font-weight: 700; overflow-wrap: anywhere; }
 .choices { display: grid; gap: 0.35rem; margin: 1rem 0; }
 .choices .btn { width: 100%; text-align: left; }
+.choices .btn:disabled { opacity: 0.55; cursor: default; }
 .choices .hint { margin: 0 0 0.75rem; }
 .house-win-options { display: grid; gap: 0.2rem; max-height: 40vh; overflow-y: auto; margin: 0.75rem 0; }
 
@@ -577,6 +584,8 @@ dialog::backdrop { background: rgba(20, 35, 122, 0.55); }
   place-items: center;
   font-size: 1.1rem;
 }
+.prize-row .nm small, #user-list .nm small { display: block; font-weight: 400; margin-top: 0.1rem; }
+#adj-dialog .section-title { margin: 1rem 0 0.4rem; font-size: 1.1rem; }
 .ach-thumb.ph { background: var(--paper); border: 1.5px solid var(--ink); }
 .voters { margin-top: 0.9rem; font-size: 0.95rem; }
 .voters summary { cursor: pointer; font-weight: 700; }
