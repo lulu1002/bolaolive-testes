@@ -404,10 +404,16 @@ async function syncPrizes(list, openPrizes, removed, reachByUser) {
     const when = (x) => (x ? new Date(x).getTime() : 0);
     cands.sort((a, b) => when(a.at) - when(b.at) || b.points - a.points || a.userId.localeCompare(b.userId));
     const w = cands[0];
-    await q(
+    const claim = await q(
       'update prizes set holder_id = $1, open = false, won_at = $2 where id = $3 and open and holder_id is null',
       [w.userId, w.at || new Date().toISOString(), pz.id]
     );
+    // Só quem de fato levou o prêmio dispara o aviso (rowCount 0 = outro cálculo chegou antes)
+    if (claim.rowCount) {
+      const winner = list.find((s) => s.userId === w.userId);
+      notifyPrizeWon(winner ? winner.name : 'Alguém', pz.name)
+        .catch((e) => console.error('Notificação de prêmio falhou:', e.message));
+    }
   }
   const { rows } = await q('select id, name, emoji, image_url, holder_id, won_at from prizes where holder_id is not null order by won_at');
   const byUser = new Map();
@@ -448,7 +454,7 @@ async function computeStandings() {
     fetchAchievementDefs(),
     q('select user_id, count(*)::int as n from hall_places where place = 1 group by user_id'),
     q('select user_id, delta, created_at as at from point_adjustments where created_at > $1', [generalResetAt]),
-    q('select id, points from prizes where open and holder_id is null'),
+    q('select id, name, points from prizes where open and holder_id is null'),
     q('select prize_id, user_id from prize_removed'),
   ]);
 
@@ -741,6 +747,21 @@ async function notifyNewPoll(title) {
   if (!PUSH_ENABLED) return;
   const { rows } = await q('select endpoint, p256dh, auth from push_subscriptions');
   await sendPush(rows, { title: 'Nova enquete no Bolão', body: short(title, 120), url: '/' });
+}
+
+/* Prêmio conquistado: avisa todos os inscritos com o nome de quem levou e do prêmio */
+async function notifyPrizeWon(userName, prizeName) {
+  if (!PUSH_ENABLED || !(await getFlag('notify_prize'))) return;
+  const { rows } = await q(
+    `select s.endpoint, s.p256dh, s.auth from push_subscriptions s
+     left join users u on u.id = s.user_id
+     where not coalesce(u.banned, false)`
+  );
+  await sendPush(rows, {
+    title: '🏅 Prêmio conquistado!',
+    body: `${short(userName, 40)} conquistou "${short(prizeName, 60)}"`,
+    url: '/#ranking',
+  });
 }
 
 /* Resultado: cada participante inscrito (e logado quando se inscreveu) que votou
@@ -1509,6 +1530,8 @@ app.get('/api/prizes', wrap(async (req, res) => {
 app.get('/api/admin/prizes', requireAdmin, wrap(async (req, res) => {
   const { rows } = await q(PRIZE_SQL);
   res.json({
+    notifyPrize: await getFlag('notify_prize'),
+    pushEnabled: PUSH_ENABLED,
     prizes: rows.map((r) => ({
       id: r.id, name: r.name, emoji: r.emoji, imageUrl: r.image_url, points: r.points,
       status: prizeStatus(r), removedCount: r.removed_count,
@@ -1652,6 +1675,7 @@ app.post('/api/admin/settings', requireAdmin, wrap(async (req, res) => {
     notifyResult: 'notify_result',
     notifyClosing: 'notify_closing',
     hallVisible: 'hall_visible',
+    notifyPrize: 'notify_prize',
   };
   for (const [field, key] of Object.entries(flagFields)) {
     const v = req.body?.[field];

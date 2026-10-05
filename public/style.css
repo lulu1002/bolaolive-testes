@@ -571,8 +571,15 @@ dialog::backdrop { background: rgba(20, 35, 122, 0.55); }
 .result { margin: 0.9rem 0 0; font-weight: 700; color: var(--hit); }
 .result.house { color: var(--gold-ink, #8a6300); }
 .house-list { display: grid; gap: 0.5rem; margin-top: 1rem; }
-.house-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-top: 1.5px dashed rgba(20, 35, 122, 0.3); }
-.house-row .nm { flex: 1; font-weight: 700; overflow-wrap: anywhere; }
+.house-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-top: 1.5px dashed rgba(20, 35, 122, 0.3); }
+/* O nome ocupa o espaço que sobra; sem espaço, os botões descem para a linha de baixo */
+.house-row .nm { flex: 1 1 9rem; min-width: 0; font-weight: 700; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  /* No celular: ícone + nome numa linha, e os botões embaixo, dois por linha */
+  .house-row .nm { flex-basis: calc(100% - 2.5rem); }
+  .house-row > .btn { flex: 1 1 calc(50% - 0.25rem); text-align: center; }
+  .house-row > .btn.small { padding: 0.4rem 0.55rem; font-size: 0.85rem; }
+}
 .ach-admin-list { display: grid; gap: 0.5rem; margin-top: 1rem; }
 .ach-thumb {
   flex: none;
@@ -584,7 +591,7 @@ dialog::backdrop { background: rgba(20, 35, 122, 0.55); }
   place-items: center;
   font-size: 1.1rem;
 }
-.prize-row .nm small, #user-list .nm small { display: block; font-weight: 400; margin-top: 0.1rem; }
+.house-row .nm small { display: block; margin: 0.15rem 0 0; font-weight: 400; }
 #adj-dialog .section-title { margin: 1rem 0 0.4rem; font-size: 1.1rem; }
 .ach-thumb.ph { background: var(--paper); border: 1.5px solid var(--ink); }
 .voters { margin-top: 0.9rem; font-size: 0.95rem; }

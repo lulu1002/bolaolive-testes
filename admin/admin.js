@@ -2,7 +2,7 @@
   'use strict';
 
   const $ = (sel, root = document) => root.querySelector(sel);
-  const state = { prizes: [], prizeEditing: null, adminUsers: [], polls: [], topics: [], topicTab: null, users: 0, editing: null, mode: 'replace', streak: { every: 0, bonus: 0 }, notify: true, notifyResult: true, notifyClosing: true, hallVisible: true, hall: [], pushEnabled: true, house: [], houseEditing: null, achievements: [], achEditing: null };
+  const state = { notifyPrize: true, prizes: [], prizeEditing: null, adminUsers: [], polls: [], topics: [], topicTab: null, users: 0, editing: null, mode: 'replace', streak: { every: 0, bonus: 0 }, notify: true, notifyResult: true, notifyClosing: true, hallVisible: true, hall: [], pushEnabled: true, house: [], houseEditing: null, achievements: [], achEditing: null };
 
   /* ---------- Utilidades ---------- */
   function h(tag, attrs = {}, ...children) {
@@ -480,12 +480,26 @@
 
   async function loadPrizes() {
     try {
-      state.prizes = (await api('/api/admin/prizes')).prizes;
+      const data = await api('/api/admin/prizes');
+      state.prizes = data.prizes;
+      state.notifyPrize = data.notifyPrize;
+      state.pushEnabled = data.pushEnabled;
+      renderPrizeNotify();
       renderPrizes();
     } catch (e) {
       handleError(e);
     }
   }
+
+  function renderPrizeNotify() {
+    const el = $('#notify-prize');
+    el.checked = state.notifyPrize;
+    el.disabled = !state.pushEnabled;
+    $('#notify-prize-hint').textContent = state.pushEnabled
+      ? 'A notificação diz o nome de quem conquistou e o nome do prêmio.'
+      : 'As notificações push não estão configuradas neste servidor (faltam as chaves VAPID).';
+  }
+  bindFlag('#notify-prize', 'notifyPrize', 'notifyPrize', 'Aviso de prêmio conquistado ligado', 'Aviso de prêmio conquistado desligado', renderPrizeNotify);
 
   function prizeStatusText(p) {
     if (p.status === 'held') {

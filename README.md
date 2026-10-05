@@ -93,7 +93,7 @@ Ao clicar em **Zerar semanal** (ou **Zerar geral**, que zera o semanal junto), o
 
 ## Prêmios únicos
 
-Na aba **🏅 Prêmio** do painel você cria prêmios com nome, emoji ou imagem (link https) e uma pontuação do **ranking geral**. Cada prêmio tem um só dono: quem cruzar a pontuação primeiro leva (empate no mesmo resultado: quem tinha mais pontos), e quem chegar depois não ganha. Contas da casa e banidos não disputam. Se já houver gente acima da pontuação ao criar o prêmio, ele vai para quem chegou primeiro. O dono aparece com o prêmio ao lado do nome no ranking geral e no perfil, e a aba **Prêmios** do ranking mostra a vitrine (com dono, disponível ou sem dono).
+Na aba **🏅 Prêmio** do painel você cria prêmios com nome, emoji ou imagem (link https) e uma pontuação do **ranking geral**. Cada prêmio tem um só dono: quem cruzar a pontuação primeiro leva (empate no mesmo resultado: quem tinha mais pontos), e quem chegar depois não ganha. Contas da casa e banidos não disputam. Se já houver gente acima da pontuação ao criar o prêmio, ele vai para quem chegou primeiro. Quando alguém conquista um prêmio, os inscritos recebem uma notificação com o **nome da pessoa e o do prêmio** (chave liga/desliga na própria aba Prêmio, ligada por padrão; dispara uma vez só por conquista, inclusive quando o prêmio é entregue ao criar ou liberar). O dono aparece com o prêmio ao lado do nome no ranking geral e no perfil, e a aba **Prêmios** do ranking mostra a vitrine (com dono, disponível ou sem dono).
 
 **Remover do dono** deixa o prêmio sem dono até você clicar em **Liberar de novo**; quem perdeu o prêmio nunca o ganha de volta. Ao liberar, ele vai para quem chegou primeiro entre os demais (se já houver alguém acima da pontuação, é entregue na hora).
 
