@@ -317,7 +317,7 @@ input:disabled, textarea:disabled { background: rgba(255, 255, 255, 0.5); color:
 }
 
 /* ---------- Sub-abas (Geral / Semanal) ---------- */
-.subtabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 1rem 0 0; }
+.subtabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 1rem 0 1.25rem; }
 .admin-subtabs { margin: 0.75rem 0 1rem; }
 #topics-panel { margin-top: 1.5rem; }
 #topics-panel summary { cursor: pointer; font-weight: 800; }
