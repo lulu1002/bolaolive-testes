@@ -130,8 +130,7 @@
     }
   }
 
-  // Mostra o botão só quando o navegador e o servidor suportam. Sem isso,
-  // fica escondido (ex.: Safari no iPhone fora da tela inicial).
+  // Mostra o botão só quando o navegador e o servidor suportam. Sem isso
   async function initNotify() {
     const btn = $('#notify-toggle');
     if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return;
@@ -353,7 +352,7 @@
     if (!state.polls.length) {
       $('#topic-tabs').hidden = true;
       box.append(h('div', { class: 'empty' },
-        h('p', {}, 'Ainda não há enquetes. Quando o admin publicar a primeira, ela aparece aqui.')));
+        h('p', {}, 'Ainda não há enquetes. Quando o alto clero publicar a primeira, ela aparece aqui.')));
       return;
     }
     // Divisórias por tópico (Geral, Casa...): só aparecem tópicos que têm enquete, e a barra
@@ -533,7 +532,7 @@
       return;
     }
     if (state.rankingPeriod === 'general' && !r.resolved) {
-      box.append(h('p', { class: 'note' }, 'Os pontos aparecem quando o admin definir a primeira resposta certa.'));
+      box.append(h('p', { class: 'note' }, 'Os pontos aparecem quando o alto clero definir a primeira resposta certa.'));
     }
     if (r.resetAt && r.resetAt > '1970-01-02') {
       box.append(h('p', { class: 'note' }, `Desde ${fmtDate(r.resetAt)}.`));
@@ -548,7 +547,7 @@
         avatarEl(s.name, s.avatar, '', s.isHouse),
         h('span', {},
           h('span', { class: 'nm-row' },
-            h('a', { class: 'nm', href: `#perfil/${s.userId}` }, (s.isHouse ? '🏠 ' : '') + s.name + (me ? ' (você)' : '')),
+            h('a', { class: 'nm', href: `#perfil/${s.userId}` }, (s.isHouse ? ' ' : '') + s.name + (me ? ' (você)' : '')),
             badgesEl(s.badges, s.prizes)),
           h('span', { class: 'hits' }, s.isHouse ? 'Conta da casa' : hits)),
         h('span', { class: 'score' }, h('b', {}, s.points), ' pts'));

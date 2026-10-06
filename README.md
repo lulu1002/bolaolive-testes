@@ -100,3 +100,8 @@ Na aba **🏅 Prêmio** do painel você cria prêmios com nome, emoji ou imagem 
 ## Usuários (pontos e banimento)
 
 Na aba **👥 Usuários**: busque alguém e use **± Pontos** para somar ou subtrair (com motivo opcional e lista de ajustes com **Desfazer**). O ajuste conta como pontos ganhos naquele momento, no ranking geral e no semanal, e some do ranking que for zerado depois. **Banir** desconecta a pessoa, impede de entrar e votar e a esconde dos rankings, do hall e do perfil; os votos ficam guardados e **Desbanir** devolve tudo. Contas da casa ficam fora desta lista.
+
+
+## Tema claro/escuro
+
+O botão 🌙/☀️ no topo do site (e do painel admin) alterna entre o tema claro e o escuro. Na primeira visita o tema segue o do aparelho; depois que a pessoa clica, a escolha fica salva naquele navegador (`localStorage`, chave `theme`) e vale para o site e para o admin. O arquivo `public/theme.js` aplica o tema antes da página aparecer, para não piscar. As cores dos dois temas ficam nas variáveis do começo de `public/style.css` (`:root` e `:root[data-theme="dark"]`): para ajustar uma cor do escuro, mude só ali.

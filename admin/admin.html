@@ -6,6 +6,8 @@
   <meta name="robots" content="noindex, nofollow">
   <title>Painel admin · Bolão</title>
   <meta name="theme-color" content="#14237A">
+  <meta name="color-scheme" content="light dark">
+  <script src="/theme.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap">
@@ -16,6 +18,7 @@
     <div class="wrap wide admin-head">
       <a class="brand" href="%ADMIN_PATH%">Bolão<small>Painel admin</small></a>
       <div class="actions">
+        <button id="theme-toggle" class="icon-btn" type="button" title="Mudar o tema" aria-label="Mudar o tema">🌙</button>
         <a class="btn ghost small" href="/">Ver o site</a>
         <button class="btn ghost small" id="logout" type="button" hidden>Sair</button>
       </div>
@@ -43,8 +46,8 @@
         <button type="button" role="tab" id="atab-streak" aria-controls="apane-streak" aria-selected="false">Bônus</button>
         <button type="button" role="tab" id="atab-ach" aria-controls="apane-ach" aria-selected="false">Conquistas</button>
         <button type="button" role="tab" id="atab-prizes" aria-controls="apane-prizes" aria-selected="false">🏅 Prêmio</button>
-        <button type="button" role="tab" id="atab-hall" aria-controls="apane-hall" aria-selected="false">🏆 Hall</button>
-        <button type="button" role="tab" id="atab-users" aria-controls="apane-users" aria-selected="false">👥 Usuários</button>
+        <button type="button" role="tab" id="atab-hall" aria-controls="apane-hall" aria-selected="false">🏆pódio semanal</button>
+        <button type="button" role="tab" id="atab-users" aria-controls="apane-users" aria-selected="false">👥 Os meliantes </button>
         <button type="button" role="tab" id="atab-backup" aria-controls="apane-backup" aria-selected="false">Backup</button>
       </nav>
 
@@ -63,7 +66,7 @@
             <span class="hint" id="notify-global-hint">Chave geral: desligada, nenhuma publicação envia notificação, mesmo com a caixa da enquete marcada.</span>
             <label class="aopt"><input type="checkbox" id="notify-result"><span>Resultado: avisar cada participante se acertou ou não, quando você define a resposta</span></label>
             <label class="aopt"><input type="checkbox" id="notify-closing"><span>Enquete fechando: lembrar, cerca de 1 hora antes, quem ainda não votou</span></label>
-            <span class="hint" id="notify-extra-hint">O lembrete só dispara com o servidor acordado (no plano grátis do Render, ele dorme sem visitas).</span>
+            <span class="hint" id="notify-extra-hint"></span>
           </fieldset>
           <form id="poll-form">
             <div class="field">
@@ -177,7 +180,7 @@
       <div id="apane-ach" role="tabpanel" aria-labelledby="atab-ach" hidden>
       <section class="panel" id="ach-panel">
         <h2>Conquistas</h2>
-        <p class="hint">Níveis de emblema por total de pontos, sequência de acertos seguidos, títulos semanais (vezes em 1º no ranking semanal), total de erros ou sequência de erros seguidos (as duas últimas são as conquistas negativas). Quem já desbloqueou mantém o emblema pra sempre, mesmo que você edite ou zere o ranking depois — só apagar o nível remove o emblema de quem tinha. O botão Ocultar esconde o nível do site sem apagar nada: ao mostrar de novo, quem já tinha volta a ver o emblema.</p>
+        <p class="hint"></p>
         <div class="admin-grid">
           <form id="ach-form">
             <input type="hidden" id="ach-id" value="">
@@ -225,8 +228,8 @@
 
       <div id="apane-prizes" role="tabpanel" aria-labelledby="atab-prizes" hidden>
       <section class="panel" id="prize-panel">
-        <h2>🏅 Prêmios únicos</h2>
-        <p class="hint">Cada prêmio tem um só dono: a primeira pessoa a chegar nos pontos do ranking geral leva, e quem chegar depois não ganha. Se você remover o prêmio de alguém, ele fica sem dono até você liberar de novo, e quem perdeu não o ganha de volta. Se já houver gente acima da pontuação ao criar o prêmio, ele vai para quem chegou primeiro.</p>
+        <h2>Prêmios</h2>
+        <p class="hint">Cada prêmio tem um só dono: a primeira pessoa a chegar nos pontos do ranking geral leva, e quem chegar depois não ganha.</p>
         <label class="aopt"><input type="checkbox" id="notify-prize"><span>Avisar os inscritos quando alguém conquistar um prêmio</span></label>
         <span class="hint" id="notify-prize-hint">A notificação diz o nome de quem conquistou e o nome do prêmio.</span>
         <div class="admin-grid">
@@ -264,7 +267,7 @@
       <div id="apane-users" role="tabpanel" aria-labelledby="atab-users" hidden>
       <section class="panel" id="users-panel">
         <h2>👥 Usuários</h2>
-        <p class="hint">Some ou subtraia pontos de alguém (conta como pontos ganhos agora, no ranking geral e no semanal) ou bana. Quem é banido não entra, não vota e some dos rankings; os votos ficam guardados e voltam se você desbanir. Contas da casa ficam na aba 🏠 Casa.</p>
+        <p class="hint">Aqui altera os pontos dos meliantes e pune o malandro.</p>
         <div class="field">
           <label for="user-search">Buscar</label>
           <input id="user-search" type="search" placeholder="Nome ou login" autocomplete="off">
@@ -275,8 +278,8 @@
 
       <div id="apane-hall" role="tabpanel" aria-labelledby="atab-hall" hidden>
       <section class="panel narrow-md" id="hall-panel">
-        <h2>🏆 Hall da fama</h2>
-        <p class="hint">O pódio (1º ao 3º) de cada semana é gravado quando você clica em Zerar semanal ou Zerar geral. Contas da casa e quem não pontuou ficam de fora; empatados dividem o lugar. Nenhum "zerar" apaga o hall.</p>
+        <h2>hall da fama</h2>
+        <p class="hint">O pódio (1º ao 3º) de cada semana é gravado quando você clica em Zerar semanal ou Zerar geral.</p>
         <label class="aopt"><input type="checkbox" id="hall-visible"><span>Mostrar o Hall da fama para os participantes</span></label>
         <span class="hint">Desligado, a aba some do ranking e o hall some do perfil. Nada é apagado, e as conquistas de título continuam funcionando (use Ocultar na aba Conquistas se quiser esconder também).</span>
         <div id="hall-list" class="alist"></div>
@@ -286,7 +289,7 @@
       <div id="apane-backup" role="tabpanel" aria-labelledby="atab-backup" hidden>
       <section class="panel narrow-md">
         <h2>Backup dos dados</h2>
-        <p>Os dados ficam no Supabase e não se perdem quando o Render reinicia. Se quiser uma cópia extra, baixe tudo em um arquivo JSON.</p>
+        <p>Apenas Backup!</p>
         <div class="actions">
           <button class="btn ghost" id="backup" type="button">Baixar backup</button>
         </div>
