@@ -22,7 +22,7 @@
   --bar: rgba(20, 35, 122, 0.12);   /* barra de votos */
   --bar-on-ink: rgba(255, 255, 255, 0.18); /* barra sobre a opção escolhida */
   --hit-bar: rgba(12, 143, 82, 0.22);
-  --line: var(--line);  /* tracejados entre linhas */
+  --line: rgba(20, 35, 122, 0.35);  /* tracejados entre linhas */
   --me-bg: #EDF0FF;                 /* linha do próprio usuário no ranking */
   --house-bg: #FFF8E6;              /* linha de conta da casa */
   --prize-bg: #FFF8DC;
@@ -547,6 +547,15 @@ dialog::backdrop { background: var(--backdrop); }
   letter-spacing: 0;
 }
 .admin-head .actions { align-items: center; }
+
+/* Celular: marca à esquerda (com "Painel admin" embaixo) e os botões lado a lado numa linha só */
+@media (max-width: 640px) {
+  .top .wrap.admin-head { align-items: center; gap: 0.5rem; padding-top: 0.7rem; }
+  .admin-head .brand { font-size: 2rem; line-height: 0.95; }
+  .admin-head .brand small { display: block; margin: 0.2rem 0 0; font-size: 0.8rem; line-height: 1.1; }
+  .admin-head .actions { flex-wrap: nowrap; gap: 0.35rem; }
+  .admin-head .actions .btn.small { padding: 0.3rem 0.6rem; font-size: 0.85rem; white-space: nowrap; }
+}
 
 .panel {
   padding: 1.25rem;
