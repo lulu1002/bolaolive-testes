@@ -520,7 +520,8 @@
       prizeIcon(p),
       h('span', { class: 'nm' },
         `${p.name} — ${p.points} pts`,
-        h('small', { class: 'hint' }, prizeStatusText(p))),
+        h('small', { class: 'hint' }, prizeStatusText(p)),
+        p.description ? h('small', { class: 'prize-desc' }, p.description) : null),
       p.status === 'held'
         ? h('button', { class: 'btn danger small', type: 'button', onclick: () => removePrizeHolder(p) }, 'Remover do dono')
         : null,
@@ -535,6 +536,7 @@
     state.prizeEditing = null;
     $('#prize-form').reset();
     $('#prize-points').value = 500;
+    $('#prize-desc').value = '';
     $('#prize-submit').textContent = 'Criar prêmio';
     $('#prize-cancel').hidden = true;
     $('#prize-error').textContent = '';
@@ -544,6 +546,7 @@
     state.prizeEditing = p.id;
     $('#prize-name').value = p.name;
     $('#prize-points').value = p.points;
+    $('#prize-desc').value = p.description || '';
     $('#prize-emoji').value = p.emoji || '';
     $('#prize-image').value = p.imageUrl || '';
     $('#prize-submit').textContent = 'Salvar alterações';
@@ -560,6 +563,7 @@
     const body = {
       name: $('#prize-name').value,
       points: $('#prize-points').value,
+      description: $('#prize-desc').value,
       emoji: $('#prize-emoji').value,
       imageUrl: $('#prize-image').value,
     };

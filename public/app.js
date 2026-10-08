@@ -467,6 +467,7 @@
           : h('span', { class: 'ach-icon' }, p.emoji),
         h('span', {},
           h('span', { class: 'nm' }, `${p.name} · ${p.points} pts`),
+          p.description ? h('span', { class: 'prize-desc' }, p.description) : null,
           p.status === 'held'
             ? h('span', { class: 'hits' }, 'Conquistado por ',
                 h('a', { href: `#perfil/${holder.userId}` }, holder.name + (me ? ' (você)' : '')),
@@ -651,6 +652,7 @@
             : h('span', { class: 'ach-icon' }, z.emoji),
           h('span', {},
             h('span', { class: 'nm' }, z.name),
+            z.description ? h('span', { class: 'prize-desc' }, z.description) : null,
             h('span', { class: 'hits' }, `Conquistado em ${new Date(z.wonAt).toLocaleDateString('pt-BR')}`))))));
     }
 
