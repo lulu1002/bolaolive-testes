@@ -1310,11 +1310,20 @@ function parseHouseInput(body) {
 }
 
 app.get('/api/admin/house-accounts', requireAdmin, wrap(async (req, res) => {
-  const { rows } = await q(
-    'select id, display_name, avatar_url, created_at from users where is_house order by created_at'
-  );
+  const [{ rows }, st, wk] = await Promise.all([
+    q('select id, display_name, avatar_url, created_at from users where is_house order by created_at'),
+    computeStandings(),
+    computeWeeklyStandings(),
+  ]);
+  const gen = new Map(st.ranking.map((s) => [s.userId, s]));
+  const week = new Map(wk.ranking.map((s) => [s.userId, s]));
   res.json({
-    accounts: rows.map((r) => ({ id: r.id, name: r.display_name, avatarUrl: r.avatar_url, createdAt: iso(r.created_at) })),
+    accounts: rows.map((r) => ({
+      id: r.id, name: r.display_name, avatarUrl: r.avatar_url, createdAt: iso(r.created_at),
+      points: gen.has(r.id) ? gen.get(r.id).points : 0,
+      weeklyPoints: week.has(r.id) ? week.get(r.id).points : 0,
+      adjust: gen.has(r.id) ? gen.get(r.id).adjust : 0,
+    })),
   });
 }));
 
@@ -1636,7 +1645,8 @@ app.post('/api/admin/users/:id/points', requireAdmin, wrap(async (req, res) => {
     return res.status(400).json({ error: 'Informe um valor inteiro diferente de zero (até 100000).' });
   }
   const note = String(req.body?.note ?? '').trim().slice(0, 120);
-  const u = await realUser(req.params.id);
+  // Vale para participantes e também para contas da casa
+  const u = (await q('select id from users where id = $1', [req.params.id])).rows[0];
   if (!u) return res.status(404).json({ error: 'Participante não encontrado.' });
   await q('insert into point_adjustments (user_id, delta, note) values ($1, $2, $3)', [u.id, delta, note]);
   await computeStandings().catch(() => {}); // conquistas e prêmio único reagem na hora

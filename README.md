@@ -99,7 +99,7 @@ Na aba **🏅 Prêmio** do painel você cria prêmios com nome, emoji ou imagem 
 
 ## Usuários (pontos e banimento)
 
-Na aba **👥 Usuários**: busque alguém e use **± Pontos** para somar ou subtrair (com motivo opcional e lista de ajustes com **Desfazer**). O ajuste conta como pontos ganhos naquele momento, no ranking geral e no semanal, e some do ranking que for zerado depois. **Banir** desconecta a pessoa, impede de entrar e votar e a esconde dos rankings, do hall e do perfil; os votos ficam guardados e **Desbanir** devolve tudo. Contas da casa ficam fora desta lista.
+Na aba **👥 Usuários**: busque alguém e use **± Pontos** para somar ou subtrair (com motivo opcional e lista de ajustes com **Desfazer**). O ajuste conta como pontos ganhos naquele momento, no ranking geral e no semanal, e some do ranking que for zerado depois. **Banir** desconecta a pessoa, impede de entrar e votar e a esconde dos rankings, do hall e do perfil; os votos ficam guardados e **Desbanir** devolve tudo. Contas da casa ficam fora desta lista, mas na aba **🏠 Casa** cada conta tem o seu próprio botão **± Pontos**, que funciona igual (soma ou subtrai, com motivo e desfazer).
 
 
 ## Tema claro/escuro

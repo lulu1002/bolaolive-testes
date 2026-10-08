@@ -692,9 +692,14 @@
     }
   }
 
-  function openAdjust(u) {
+  let adjSource = 'users'; // de onde o diálogo foi aberto: lista de usuários ou contas da casa
+  const reloadAdjustSource = () => (adjSource === 'house' ? loadHouse() : loadUsers());
+  const adjustSourceList = () => (adjSource === 'house' ? state.house : state.adminUsers);
+
+  function openAdjust(u, source = 'users') {
     adjUser = u;
-    $('#adj-name').textContent = `${u.name} (@${u.login})`;
+    adjSource = source;
+    $('#adj-name').textContent = u.login ? `${u.name} (@${u.login})` : u.name;
     $('#adj-current').textContent = `Agora: ${u.points} pts no geral, ${u.weeklyPoints} na semana.`;
     $('#adj-amount').value = '';
     $('#adj-note').value = '';
@@ -715,7 +720,7 @@
       await api(`/api/admin/users/${adjUser.id}/points`, { method: 'POST', body: { delta: sign * n, note: $('#adj-note').value } });
       toast(`${sign > 0 ? '+' : '-'}${n} pontos para ${adjUser.name}`);
       adjDialog.close();
-      await loadUsers();
+      await reloadAdjustSource();
     } catch (e) {
       if (e.status === 401) { adjDialog.close(); handleError(e); } else $('#adj-error').textContent = e.message;
     }
@@ -730,8 +735,8 @@
     try {
       await api(`/api/admin/adjustments/${a.id}`, { method: 'DELETE' });
       toast('Ajuste desfeito');
-      await loadUsers();
-      const fresh = state.adminUsers.find((x) => x.id === adjUser.id);
+      await reloadAdjustSource();
+      const fresh = adjustSourceList().find((x) => x.id === adjUser.id);
       if (fresh) { adjUser = fresh; $('#adj-current').textContent = `Agora: ${fresh.points} pts no geral, ${fresh.weeklyPoints} na semana.`; }
       await loadAdjustments();
     } catch (e) {
@@ -915,7 +920,10 @@
     }
     box.append(...state.house.map((acc) => h('div', { class: 'house-row' },
       houseThumb(acc),
-      h('span', { class: 'nm' }, acc.name),
+      h('span', { class: 'nm' }, acc.name,
+        h('small', { class: 'hint' },
+          `${acc.points} pts no geral · ${acc.weeklyPoints} na semana${acc.adjust ? ` · ajuste ${acc.adjust > 0 ? '+' : ''}${acc.adjust}` : ''}`)),
+      h('button', { class: 'btn ghost small', type: 'button', onclick: () => openAdjust(acc, 'house') }, '± Pontos'),
       h('button', { class: 'btn ghost small', type: 'button', onclick: () => startEditHouse(acc) }, 'Editar'),
       h('button', { class: 'btn danger small', type: 'button', onclick: () => removeHouse(acc) }, 'Remover'))));
   }
