@@ -248,6 +248,15 @@ create table if not exists prizes (
 );
 -- Texto opcional que o site mostra junto do prêmio (o que é, como ganhar, etc.).
 alter table prizes add column if not exists description text not null default '';
+-- Odd por enquete: a odd de cada opção é calculada pelos votos (total ÷ votos da opção, de 1x a 10x).
+-- Quem acerta ganha pontos × odd; quem erra perde os pontos da enquete. Desligado por padrão.
+alter table polls add column if not exists odds_enabled boolean not null default false;
+-- Mostra a odd ao vivo, enquanto a votação está aberta (isso revela como os votos estão distribuídos).
+alter table polls add column if not exists odds_live boolean not null default false;
+-- Pontos exatos (com sinal) de cada voto de enquetes apagadas "mantendo os pontos". Linhas antigas ficam
+-- nulas e continuam valendo como antes (acertou = pontos, errou = 0).
+alter table awards add column if not exists delta integer;
+
 -- Quem já perdeu um prêmio não o ganha de volta quando ele é liberado.
 create table if not exists prize_removed (
   prize_id   text not null references prizes(id) on delete cascade,

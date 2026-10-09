@@ -86,6 +86,11 @@
               <label for="f-points">Pontos por acerto</label>
               <input id="f-points" type="number" min="1" max="1000" step="1" value="10">
             </div>
+            <div class="field" id="f-odds-field">
+              <label class="aopt"><input type="checkbox" id="f-odds"><span>Usar odd nesta enquete</span></label>
+              <span class="hint" id="f-odds-hint">Acertou: ganha os pontos × a odd da opção. Errou: perde os pontos. A odd é calculada pelos votos (total de votos ÷ votos da opção, de 1x a 10x) e vale a odd final, quando a votação fecha.</span>
+              <label class="aopt"><input type="checkbox" id="f-odds-live"><span>Mostrar a odd ao vivo (revela como os votos estão distribuídos)</span></label>
+            </div>
             <div class="field">
               <label for="f-closes">Votação encerra em (opcional)</label>
               <input id="f-closes" type="datetime-local">

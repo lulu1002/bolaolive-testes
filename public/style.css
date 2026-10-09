@@ -338,6 +338,7 @@ input:disabled, textarea:disabled { background: var(--field-disabled); color: va
   font-weight: 800;
 }
 
+.tag.odd { background: var(--gold); border-color: var(--gold); color: var(--on-gold); }
 .opt.is-mine { background: var(--ink); color: var(--ticket); }
 .opt.is-mine:hover:not(:disabled) { background: var(--ink); }
 .opt.is-mine .box { background: var(--ticket); border-color: var(--ticket); }

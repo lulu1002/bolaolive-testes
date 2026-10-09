@@ -105,3 +105,14 @@ Na aba **👥 Usuários**: busque alguém e use **± Pontos** para somar ou subt
 ## Tema claro/escuro
 
 O botão 🌙/☀️ no topo do site (e do painel admin) alterna entre o tema claro e o escuro. Na primeira visita o tema segue o do aparelho; depois que a pessoa clica, a escolha fica salva naquele navegador (`localStorage`, chave `theme`) e vale para o site e para o admin. O arquivo `public/theme.js` aplica o tema antes da página aparecer, para não piscar. As cores dos dois temas ficam nas variáveis do começo de `public/style.css` (`:root` e `:root[data-theme="dark"]`): para ajustar uma cor do escuro, mude só ali.
+
+
+## Odd por enquete
+
+Ao criar (ou editar, enquanto a enquete não tem resposta) dá para marcar **"Usar odd nesta enquete"**. Com a odd ligada:
+
+- A odd de cada opção é calculada pelos votos: **total de votos ÷ votos da opção**, de **1x a 10x**, contando só participantes de verdade (contas da casa não entram). Ex.: 10 votos e 2 na opção A = odd 5,00x.
+- **Acertou:** ganha os pontos da enquete × a odd da opção (arredondado). **Errou:** perde os pontos da enquete (sem multiplicar). Em "A casa ganha", quem votou perde os pontos e as contas da casa recebem os pontos normais.
+- Vale a **odd final**, quando a votação fecha. Por padrão a odd só aparece depois do fechamento, porque os votos também ficam escondidos enquanto a enquete está aberta; a opção **"Mostrar a odd ao vivo"** exibe a odd durante a votação (o que revela como os votos estão distribuídos).
+- Os pontos entram no ranking geral e no semanal (que pode ficar negativo), no histórico do perfil, na notificação de resultado ("+N pontos" ou "você perdeu N pontos") e nas enquetes apagadas com "manter os pontos" (gravados em `awards.delta`). O bônus de sequência e as conquistas continuam contando só acertos e erros.
+- Enquetes sem odd continuam como antes: acertou ganha os pontos, errou ganha 0.

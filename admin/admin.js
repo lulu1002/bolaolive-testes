@@ -165,10 +165,12 @@
     const options = p.options.map((o) => h('label', { class: 'aopt' },
       h('input', { type: 'radio', name: group, value: o.id, checked: o.id === p.correctOptionId }),
       h('span', {}, o.text),
-      h('span', { class: 'count' }, `${o.voters.length} ${o.voters.length === 1 ? 'voto' : 'votos'}`)));
+      h('span', { class: 'count' }, `${o.voters.length} ${o.voters.length === 1 ? 'voto' : 'votos'}${o.odd ? ` · odd ${o.odd.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}x` : ''}`)));
 
     const meta = [
-      `${p.points} ${p.points === 1 ? 'ponto' : 'pontos'} por acerto`,
+      p.oddsEnabled
+        ? `🎲 ${p.points} ${p.points === 1 ? 'ponto' : 'pontos'} (base) × odd${p.oddsLive ? ' ao vivo' : ''}`
+        : `${p.points} ${p.points === 1 ? 'ponto' : 'pontos'} por acerto`,
       p.closesAt ? `encerra em ${fmtDate(p.closesAt)}` : 'sem prazo',
       `${p.totalVotes} ${p.totalVotes === 1 ? 'voto' : 'votos'}`,
     ].join(', ');
@@ -181,9 +183,11 @@
       h('p', { class: 'meta' }, meta),
       p.description ? h('p', { class: 'desc' }, p.description) : null,
       p.houseWon
-        ? h('p', { class: 'result house' }, `🏠 A casa ganhou: nenhuma opção bateu. +${p.points} pts pra cada conta da casa.`)
+        ? h('p', { class: 'result house' }, `🏠 A casa ganhou: nenhuma opção bateu. +${p.points} pts pra cada conta da casa${p.oddsEnabled ? `; quem votou perdeu ${p.points} pts` : ''}.`)
         : correct
-          ? h('p', { class: 'result' }, `Resposta certa: ${correct.text}. ${p.hits} de ${p.totalVotes} acertaram (+${p.points} pts cada).`)
+          ? h('p', { class: 'result' }, p.oddsEnabled
+              ? `Resposta certa: ${correct.text}. ${p.hits} de ${p.totalVotes} acertaram (+${p.hitGain} pts cada, com a odd final); quem errou perdeu ${p.points} pts.`
+              : `Resposta certa: ${correct.text}. ${p.hits} de ${p.totalVotes} acertaram (+${p.points} pts cada).`)
           : null,
       h('fieldset', {}, h('legend', {}, 'Resposta certa'), options),
       h('details', { class: 'voters' },
@@ -383,10 +387,23 @@
   pointsDialog.addEventListener('click', (e) => { if (e.target === pointsDialog) pointsDialog.close(); });
 
   /* ---------- Formulário (criar e editar) ---------- */
+  const ODDS_HINT = 'Acertou: ganha os pontos × a odd da opção. Errou: perde os pontos. A odd é calculada pelos votos (total de votos ÷ votos da opção, de 1x a 10x) e vale a odd final, quando a votação fecha.';
+  // "Odd ao vivo" só faz sentido com a odd ligada
+  function syncOddsLive() {
+    const live = $('#f-odds-live');
+    live.disabled = !$('#f-odds').checked || $('#f-odds').disabled;
+    if (!$('#f-odds').checked) live.checked = false;
+  }
+  $('#f-odds').addEventListener('change', syncOddsLive);
+  syncOddsLive();
+
   function resetForm() {
     state.editing = null;
     $('#poll-form').reset();
     $('#f-points').value = 10;
+    $('#f-odds').disabled = false;
+    $('#f-odds-hint').textContent = ODDS_HINT;
+    syncOddsLive();
     $('#f-options').disabled = false;
     $('#f-options-hint').textContent = 'De 1 a 10 opções, uma por linha.';
     $('#form-title').textContent = 'Nova enquete';
@@ -406,6 +423,14 @@
     $('#f-options').disabled = true;
     $('#f-options-hint').textContent = 'As opções não podem ser alteradas depois de publicar.';
     $('#f-points').value = p.points;
+    // A odd só pode ser ligada/desligada enquanto a enquete não tem resposta
+    $('#f-odds').checked = Boolean(p.oddsEnabled);
+    $('#f-odds-live').checked = Boolean(p.oddsLive);
+    $('#f-odds').disabled = p.status === 'resolved';
+    $('#f-odds-hint').textContent = p.status === 'resolved'
+      ? 'Esta enquete já tem resposta: os pontos foram dados, então a odd não pode mais ser ligada ou desligada.'
+      : ODDS_HINT;
+    syncOddsLive();
     $('#f-closes').value = toLocalInput(p.closesAt);
     $('#f-notify-field').hidden = true; // editar não envia notificação
     $('#form-title').textContent = 'Editar enquete';
@@ -451,6 +476,8 @@
       description: $('#f-desc').value,
       points: $('#f-points').value,
       closesAt: closes ? new Date(closes).toISOString() : null,
+      oddsEnabled: $('#f-odds').checked,
+      oddsLive: $('#f-odds-live').checked,
     };
     const editing = state.editing;
     if (editing) {

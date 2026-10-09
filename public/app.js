@@ -241,7 +241,19 @@
     return 'Resultado definido';
   }
 
+  // Aviso fixo das enquetes com odd, embaixo do aviso normal
+  function oddNote(p) {
+    if (!p.oddsEnabled || p.status !== 'open') return null;
+    return h('p', { class: 'note' }, p.oddsLive
+      ? '🎲 Odd ao vivo: acertou, ganha os pontos × a odd da opção; errou, perde os pontos. A odd muda a cada voto e vale a final, quando a votação fecha.'
+      : '🎲 Com odd: acertou, ganha os pontos × a odd da opção (calculada pelos votos quando a votação fechar); errou, perde os pontos.');
+  }
+
   function noteFor(p) {
+    return [baseNote(p), oddNote(p)];
+  }
+
+  function baseNote(p) {
     if (p.status === 'open') {
       if (!state.user) {
         return h('p', { class: 'note' }, 'Entre com a Twitch para registrar seu palpite. ',
@@ -253,13 +265,22 @@
     if (!state.user) return null;
     if (!p.myVote) return h('p', { class: 'note' }, 'Você não votou nesta enquete.');
     if (p.status === 'closed') return h('p', { class: 'note' }, 'Palpite registrado. Aguardando o resultado.');
-    if (p.houseWon) return h('p', { class: 'note miss' }, 'Ninguém acertou: 🏠 a casa levou os pontos desta vez.');
+    if (p.houseWon) {
+      return h('p', { class: 'note miss' }, p.oddsEnabled && p.myPoints < 0
+        ? `Ninguém acertou: 🏠 a casa levou os pontos e você perdeu ${-p.myPoints}.`
+        : 'Ninguém acertou: 🏠 a casa levou os pontos desta vez.');
+    }
     if (p.myPoints === null) {
       return h('p', { class: p.myHit ? 'note hit' : 'note miss' },
         p.myHit ? 'Você acertou. Os pontos foram zerados junto com o ranking.' : 'Você errou desta vez.');
     }
     if (p.myPoints > 0) {
-      return h('p', { class: 'note hit' }, `Você acertou: +${p.myPoints} ${p.myPoints === 1 ? 'ponto' : 'pontos'}.`);
+      const mineOpt = p.options.find((o) => o.id === p.myVote);
+      const odd = p.oddsEnabled && mineOpt && mineOpt.odd ? ` (odd ${fmtOdd(mineOpt.odd)})` : '';
+      return h('p', { class: 'note hit' }, `Você acertou: +${p.myPoints} ${p.myPoints === 1 ? 'ponto' : 'pontos'}${odd}.`);
+    }
+    if (p.myPoints < 0) {
+      return h('p', { class: 'note miss' }, `Você errou desta vez: −${-p.myPoints} ${p.myPoints === -1 ? 'ponto' : 'pontos'}.`);
     }
     return h('p', { class: 'note miss' }, 'Você errou desta vez. 0 pontos.');
   }
@@ -281,16 +302,24 @@
       onclick: () => vote(p, o.id),
     }, h('span', { class: 'box' }, xMark()), h('span', { class: 'opt-text' }, o.text));
 
+    // Odd da opção: depois que a votação fecha, ou ao vivo se a enquete mostra a odd enquanto aberta
+    const oddTag = p.oddsEnabled && o.odd ? h('span', { class: 'tag odd', title: 'Odd da opção' }, fmtOdd(o.odd)) : null;
     if (!isOpen) {
       const total = p.totalVotes || 0;
       const pct = total ? Math.round((o.votes / total) * 100) : 0;
       btn.style.setProperty('--pct', `${pct}%`);
       btn.prepend(h('span', { class: 'bar' }));
       if (correct) btn.append(h('span', { class: 'tag' }, 'Certa'));
+      if (oddTag) btn.append(oddTag);
       btn.append(h('span', { class: 'opt-meta' }, `${pct}% (${o.votes})`));
+    } else if (oddTag) {
+      btn.append(oddTag);
     }
     return btn;
   }
+
+  // Odd com duas casas e vírgula: 2,50x
+  const fmtOdd = (o) => `${o.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x`;
 
   function renderPoll(p) {
     const statusText = { open: 'Aberta', closed: 'Encerrada', resolved: 'Resultado' }[p.status];
@@ -300,6 +329,7 @@
           h('span', { class: 'pts-n' }, p.points),
           h('span', { class: 'pts-l' }, p.points === 1 ? 'ponto' : 'pontos')),
         h('span', { class: `pill ${p.status}` }, statusText),
+        p.oddsEnabled ? h('span', { class: 'pill bonus' }, '🎲 Com odd') : null,
         p.houseWon ? h('span', { class: 'pill house' }, '🏠 Casa venceu') : null,
         h('div', { class: 'when' }, whenLabel(p))),
       h('div', { class: 'body' },
@@ -583,7 +613,7 @@
         h('span', { class: 'nm' }, i.title),
         h('span', { class: 'hits' }, detail)),
       h('div', { class: 'hist-res' },
-        h('span', { class: `pill ${i.hit ? 'hit' : 'miss'}` }, i.hit ? `Acertou +${i.points}` : 'Errou'),
+        h('span', { class: `pill ${i.hit ? 'hit' : 'miss'}` }, i.hit ? `Acertou +${i.points}` : i.points < 0 ? `Errou −${-i.points}` : 'Errou'),
         i.bonus ? h('span', { class: 'pill bonus' }, `+${i.bonus} bônus`) : null));
   }
 
