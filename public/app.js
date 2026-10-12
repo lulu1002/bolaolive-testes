@@ -241,19 +241,7 @@
     return 'Resultado definido';
   }
 
-  // Aviso fixo das enquetes com odd, embaixo do aviso normal
-  function oddNote(p) {
-    if (!p.oddsEnabled || p.status !== 'open') return null;
-    return h('p', { class: 'note' }, p.oddsLive
-      ? '🎲 Odd ao vivo: acertou, ganha os pontos × a odd da opção; errou, perde os pontos. A odd muda a cada voto e vale a final, quando a votação fecha.'
-      : '🎲 Com odd: acertou, ganha os pontos × a odd da opção (calculada pelos votos quando a votação fechar); errou, perde os pontos.');
-  }
-
   function noteFor(p) {
-    return [baseNote(p), oddNote(p)];
-  }
-
-  function baseNote(p) {
     if (p.status === 'open') {
       if (!state.user) {
         return h('p', { class: 'note' }, 'Entre com a Twitch para registrar seu palpite. ',
@@ -265,22 +253,13 @@
     if (!state.user) return null;
     if (!p.myVote) return h('p', { class: 'note' }, 'Você não votou nesta enquete.');
     if (p.status === 'closed') return h('p', { class: 'note' }, 'Palpite registrado. Aguardando o resultado.');
-    if (p.houseWon) {
-      return h('p', { class: 'note miss' }, p.oddsEnabled && p.myPoints < 0
-        ? `Ninguém acertou: 🏠 a casa levou os pontos e você perdeu ${-p.myPoints}.`
-        : 'Ninguém acertou: 🏠 a casa levou os pontos desta vez.');
-    }
+    if (p.houseWon) return h('p', { class: 'note miss' }, 'Ninguém acertou: 🏠 a casa levou os pontos desta vez.');
     if (p.myPoints === null) {
       return h('p', { class: p.myHit ? 'note hit' : 'note miss' },
         p.myHit ? 'Você acertou. Os pontos foram zerados junto com o ranking.' : 'Você errou desta vez.');
     }
     if (p.myPoints > 0) {
-      const mineOpt = p.options.find((o) => o.id === p.myVote);
-      const odd = p.oddsEnabled && mineOpt && mineOpt.odd ? ` (odd ${fmtOdd(mineOpt.odd)})` : '';
-      return h('p', { class: 'note hit' }, `Você acertou: +${p.myPoints} ${p.myPoints === 1 ? 'ponto' : 'pontos'}${odd}.`);
-    }
-    if (p.myPoints < 0) {
-      return h('p', { class: 'note miss' }, `Você errou desta vez: −${-p.myPoints} ${p.myPoints === -1 ? 'ponto' : 'pontos'}.`);
+      return h('p', { class: 'note hit' }, `Você acertou: +${p.myPoints} ${p.myPoints === 1 ? 'ponto' : 'pontos'}.`);
     }
     return h('p', { class: 'note miss' }, 'Você errou desta vez. 0 pontos.');
   }
@@ -302,24 +281,16 @@
       onclick: () => vote(p, o.id),
     }, h('span', { class: 'box' }, xMark()), h('span', { class: 'opt-text' }, o.text));
 
-    // Odd da opção: depois que a votação fecha, ou ao vivo se a enquete mostra a odd enquanto aberta
-    const oddTag = p.oddsEnabled && o.odd ? h('span', { class: 'tag odd', title: 'Odd da opção' }, fmtOdd(o.odd)) : null;
     if (!isOpen) {
       const total = p.totalVotes || 0;
       const pct = total ? Math.round((o.votes / total) * 100) : 0;
       btn.style.setProperty('--pct', `${pct}%`);
       btn.prepend(h('span', { class: 'bar' }));
       if (correct) btn.append(h('span', { class: 'tag' }, 'Certa'));
-      if (oddTag) btn.append(oddTag);
       btn.append(h('span', { class: 'opt-meta' }, `${pct}% (${o.votes})`));
-    } else if (oddTag) {
-      btn.append(oddTag);
     }
     return btn;
   }
-
-  // Odd com duas casas e vírgula: 2,50x
-  const fmtOdd = (o) => `${o.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x`;
 
   function renderPoll(p) {
     const statusText = { open: 'Aberta', closed: 'Encerrada', resolved: 'Resultado' }[p.status];
@@ -329,7 +300,6 @@
           h('span', { class: 'pts-n' }, p.points),
           h('span', { class: 'pts-l' }, p.points === 1 ? 'ponto' : 'pontos')),
         h('span', { class: `pill ${p.status}` }, statusText),
-        p.oddsEnabled ? h('span', { class: 'pill bonus' }, '🎲 Com odd') : null,
         p.houseWon ? h('span', { class: 'pill house' }, '🏠 Casa venceu') : null,
         h('div', { class: 'when' }, whenLabel(p))),
       h('div', { class: 'body' },
@@ -442,17 +412,17 @@
       state.prizesError = e.message;
     }
     const any = Boolean(state.prizes && state.prizes.prizes.length);
-    $('#rtab-prizes').hidden = !any;
-    if (state.rankingPeriod === 'prizes') {
-      if (state.prizes && !any) { setRankingPeriod('weekly'); return; } // não há mais prêmios
-      renderRanking();
+    $('#tab-prizes').hidden = !any;
+    if (state.view === 'prizes') {
+      if (state.prizes && !any) { navigate('#ranking'); return; } // não há mais prêmios
+      renderPrizesView();
     }
   }
 
   async function loadRanking() {
     loadHall(); // também mostra/esconde a aba do hall
     loadPrizes(); // e a dos prêmios
-    if (state.rankingPeriod === 'hall' || state.rankingPeriod === 'prizes') return;
+    if (state.rankingPeriod === 'hall') return;
     try {
       const path = state.rankingPeriod === 'weekly' ? '/api/ranking/weekly' : '/api/ranking';
       state.ranking = await api(path);
@@ -466,7 +436,7 @@
   function setRankingPeriod(period) {
     if (state.rankingPeriod === period) return;
     state.rankingPeriod = period;
-    for (const p of ['weekly', 'general', 'hall', 'prizes']) $(`#rtab-${p}`).setAttribute('aria-selected', String(period === p));
+    for (const p of ['weekly', 'general', 'hall']) $(`#rtab-${p}`).setAttribute('aria-selected', String(period === p));
     state.ranking = null;
     renderRanking();
     loadRanking();
@@ -474,7 +444,6 @@
   $('#rtab-general').addEventListener('click', () => setRankingPeriod('general'));
   $('#rtab-weekly').addEventListener('click', () => setRankingPeriod('weekly'));
   $('#rtab-hall').addEventListener('click', () => setRankingPeriod('hall'));
-  $('#rtab-prizes').addEventListener('click', () => setRankingPeriod('prizes'));
 
   function renderPrizes(box) {
     if (state.prizesError) {
@@ -506,6 +475,12 @@
               ? null // prêmio disponível: sem texto extra, só nome, pontos e descrição
               : h('span', { class: 'hits' }, 'Sem dono por enquanto')));
     })));
+  }
+
+  function renderPrizesView() {
+    const box = $('#prizes');
+    box.replaceChildren();
+    renderPrizes(box);
   }
 
   function renderHall(box) {
@@ -546,7 +521,6 @@
     const box = $('#ranking');
     box.replaceChildren();
     if (state.rankingPeriod === 'hall') { renderHall(box); return; }
-    if (state.rankingPeriod === 'prizes') { renderPrizes(box); return; }
     if (state.rankError) {
       box.append(h('div', { class: 'empty' },
         h('p', {}, state.rankError),
@@ -613,7 +587,7 @@
         h('span', { class: 'nm' }, i.title),
         h('span', { class: 'hits' }, detail)),
       h('div', { class: 'hist-res' },
-        h('span', { class: `pill ${i.hit ? 'hit' : 'miss'}` }, i.hit ? `Acertou +${i.points}` : i.points < 0 ? `Errou −${-i.points}` : 'Errou'),
+        h('span', { class: `pill ${i.hit ? 'hit' : 'miss'}` }, i.hit ? `Acertou +${i.points}` : 'Errou'),
         i.bonus ? h('span', { class: 'pill bonus' }, `+${i.bonus} bônus`) : null));
   }
 
@@ -715,10 +689,13 @@
     state.view = view;
     $('#view-polls').hidden = view !== 'polls';
     $('#view-ranking').hidden = view !== 'ranking';
+    $('#view-prizes').hidden = view !== 'prizes';
     $('#view-profile').hidden = view !== 'profile';
     $('#tab-polls').setAttribute('aria-selected', String(view === 'polls'));
-    $('#tab-ranking').setAttribute('aria-selected', String(view !== 'polls'));
+    $('#tab-ranking').setAttribute('aria-selected', String(view === 'ranking' || view === 'profile'));
+    $('#tab-prizes').setAttribute('aria-selected', String(view === 'prizes'));
     if (view === 'ranking') loadRanking();
+    if (view === 'prizes') { renderPrizesView(); loadPrizes(); }
     if (view === 'profile') {
       state.profileId = profileId;
       state.profile = null;
@@ -732,7 +709,7 @@
   function route() {
     const m = location.hash.match(/^#perfil\/([\w-]+)$/);
     if (m) setView('profile', m[1]);
-    else setView(location.hash === '#ranking' ? 'ranking' : 'polls');
+    else setView(location.hash === '#ranking' ? 'ranking' : location.hash === '#premios' ? 'prizes' : 'polls');
   }
 
   function navigate(hash) {
@@ -743,10 +720,12 @@
   window.addEventListener('popstate', route); // botão voltar e links #perfil/...
   $('#tab-polls').addEventListener('click', () => navigate(''));
   $('#tab-ranking').addEventListener('click', () => navigate('#ranking'));
+  $('#tab-prizes').addEventListener('click', () => navigate('#premios'));
 
   /* ---------- Atualização automática ---------- */
   function refresh() {
     loadPolls();
+    loadPrizes();
     if (state.view === 'ranking') loadRanking();
     if (state.view === 'profile') loadProfile();
   }
@@ -789,6 +768,7 @@
     renderWho();
     route();
     loadPolls();
+    loadPrizes();
     connectEvents();
     // Plano B caso a conexão em tempo real caia
     setInterval(() => { if (!document.hidden) refresh(); }, 60000);

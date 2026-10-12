@@ -165,12 +165,10 @@
     const options = p.options.map((o) => h('label', { class: 'aopt' },
       h('input', { type: 'radio', name: group, value: o.id, checked: o.id === p.correctOptionId }),
       h('span', {}, o.text),
-      h('span', { class: 'count' }, `${o.voters.length} ${o.voters.length === 1 ? 'voto' : 'votos'}${o.odd ? ` · odd ${o.odd.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}x` : ''}`)));
+      h('span', { class: 'count' }, `${o.voters.length} ${o.voters.length === 1 ? 'voto' : 'votos'}`)));
 
     const meta = [
-      p.oddsEnabled
-        ? `🎲 ${p.points} ${p.points === 1 ? 'ponto' : 'pontos'} (base) × odd${p.oddsLive ? ' ao vivo' : ''}`
-        : `${p.points} ${p.points === 1 ? 'ponto' : 'pontos'} por acerto`,
+      `${p.points} ${p.points === 1 ? 'ponto' : 'pontos'} por acerto`,
       p.closesAt ? `encerra em ${fmtDate(p.closesAt)}` : 'sem prazo',
       `${p.totalVotes} ${p.totalVotes === 1 ? 'voto' : 'votos'}`,
     ].join(', ');
@@ -178,16 +176,15 @@
     const article = h('article', { class: 'panel apoll' },
       h('div', { class: 'apoll-head' }, h('h3', {}, p.title),
         h('span', { class: 'pills' },
+          p.house ? h('span', { class: 'pill' }, '🏠 Casa') : null,
           p.visible ? null : h('span', { class: 'pill' }, 'Fora da página'),
           h('span', { class: `pill ${p.status}` }, statusText(p)))),
       h('p', { class: 'meta' }, meta),
       p.description ? h('p', { class: 'desc' }, p.description) : null,
       p.houseWon
-        ? h('p', { class: 'result house' }, `🏠 A casa ganhou: nenhuma opção bateu. +${p.points} pts pra cada conta da casa${p.oddsEnabled ? `; quem votou perdeu ${p.points} pts` : ''}.`)
+        ? h('p', { class: 'result house' }, `🏠 A casa ganhou: nenhuma opção bateu. +${p.points} pts pra cada conta da casa.`)
         : correct
-          ? h('p', { class: 'result' }, p.oddsEnabled
-              ? `Resposta certa: ${correct.text}. ${p.hits} de ${p.totalVotes} acertaram (+${p.hitGain} pts cada, com a odd final); quem errou perdeu ${p.points} pts.`
-              : `Resposta certa: ${correct.text}. ${p.hits} de ${p.totalVotes} acertaram (+${p.points} pts cada).`)
+          ? h('p', { class: 'result' }, `Resposta certa: ${correct.text}. ${p.hits} de ${p.totalVotes} acertaram (+${p.points} pts cada).`)
           : null,
       h('fieldset', {}, h('legend', {}, 'Resposta certa'), options),
       h('details', { class: 'voters' },
@@ -292,9 +289,33 @@
       return;
     }
     const text = p.options.find((o) => o.id === sel.value).text;
+    if (p.house && state.house.length) {
+      // Enquete com a opção Casa: antes de confirmar, escolhe quais contas da casa erram
+      houseLoseTarget = { poll: p, optionId: sel.value };
+      $('#house-lose-name').textContent = `${p.title} — resposta certa: ${text}`;
+      $('#house-lose-options').replaceChildren(...state.house.map((acc) => h('label', { class: 'aopt' },
+        h('input', { type: 'checkbox', name: 'house-lose', value: acc.id }),
+        houseThumb(acc),
+        h('span', {}, acc.name))));
+      houseLoseDialog.showModal();
+      return;
+    }
     if (!confirm(`Confirmar "${text}" como resposta certa? Os pontos do ranking serão calculados agora.`)) return;
     act(() => api(`/api/admin/polls/${p.id}/resolve`, { method: 'POST', body: { optionId: sel.value } }), 'Resposta salva e ranking atualizado');
   }
+
+  const houseLoseDialog = $('#house-lose-dialog');
+  let houseLoseTarget = null;
+  $('#house-lose-cancel').addEventListener('click', () => houseLoseDialog.close());
+  houseLoseDialog.addEventListener('click', (e) => { if (e.target === houseLoseDialog) houseLoseDialog.close(); });
+  $('#house-lose-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const ids = [...$('#house-lose-options').querySelectorAll('input:checked')].map((i) => i.value);
+    const { poll, optionId } = houseLoseTarget;
+    houseLoseDialog.close();
+    act(() => api(`/api/admin/polls/${poll.id}/resolve`, { method: 'POST', body: { optionId, houseLoseIds: ids } }),
+      'Resposta salva e ranking atualizado');
+  });
 
   const houseWinDialog = $('#house-win-dialog');
   let houseWinTarget = null;
@@ -387,23 +408,11 @@
   pointsDialog.addEventListener('click', (e) => { if (e.target === pointsDialog) pointsDialog.close(); });
 
   /* ---------- Formulário (criar e editar) ---------- */
-  const ODDS_HINT = 'Acertou: ganha os pontos × a odd da opção. Errou: perde os pontos. A odd é calculada pelos votos (total de votos ÷ votos da opção, de 1x a 10x) e vale a odd final, quando a votação fecha.';
-  // "Odd ao vivo" só faz sentido com a odd ligada
-  function syncOddsLive() {
-    const live = $('#f-odds-live');
-    live.disabled = !$('#f-odds').checked || $('#f-odds').disabled;
-    if (!$('#f-odds').checked) live.checked = false;
-  }
-  $('#f-odds').addEventListener('change', syncOddsLive);
-  syncOddsLive();
-
   function resetForm() {
     state.editing = null;
     $('#poll-form').reset();
     $('#f-points').value = 10;
-    $('#f-odds').disabled = false;
-    $('#f-odds-hint').textContent = ODDS_HINT;
-    syncOddsLive();
+    $('#f-house').checked = false;
     $('#f-options').disabled = false;
     $('#f-options-hint').textContent = 'De 1 a 10 opções, uma por linha.';
     $('#form-title').textContent = 'Nova enquete';
@@ -423,14 +432,7 @@
     $('#f-options').disabled = true;
     $('#f-options-hint').textContent = 'As opções não podem ser alteradas depois de publicar.';
     $('#f-points').value = p.points;
-    // A odd só pode ser ligada/desligada enquanto a enquete não tem resposta
-    $('#f-odds').checked = Boolean(p.oddsEnabled);
-    $('#f-odds-live').checked = Boolean(p.oddsLive);
-    $('#f-odds').disabled = p.status === 'resolved';
-    $('#f-odds-hint').textContent = p.status === 'resolved'
-      ? 'Esta enquete já tem resposta: os pontos foram dados, então a odd não pode mais ser ligada ou desligada.'
-      : ODDS_HINT;
-    syncOddsLive();
+    $('#f-house').checked = Boolean(p.house);
     $('#f-closes').value = toLocalInput(p.closesAt);
     $('#f-notify-field').hidden = true; // editar não envia notificação
     $('#form-title').textContent = 'Editar enquete';
@@ -476,8 +478,7 @@
       description: $('#f-desc').value,
       points: $('#f-points').value,
       closesAt: closes ? new Date(closes).toISOString() : null,
-      oddsEnabled: $('#f-odds').checked,
-      oddsLive: $('#f-odds-live').checked,
+      house: $('#f-house').checked,
     };
     const editing = state.editing;
     if (editing) {

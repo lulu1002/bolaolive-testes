@@ -86,15 +86,14 @@
               <label for="f-points">Pontos por acerto</label>
               <input id="f-points" type="number" min="1" max="1000" step="1" value="10">
             </div>
-            <div class="field" id="f-odds-field">
-              <label class="aopt"><input type="checkbox" id="f-odds"><span>Usar odd nesta enquete</span></label>
-              <span class="hint" id="f-odds-hint">Acertou: ganha os pontos × a odd da opção. Errou: perde os pontos. A odd é calculada pelos votos (total de votos ÷ votos da opção, de 1x a 10x) e vale a odd final, quando a votação fecha.</span>
-              <label class="aopt"><input type="checkbox" id="f-odds-live"><span>Mostrar a odd ao vivo (revela como os votos estão distribuídos)</span></label>
-            </div>
             <div class="field">
               <label for="f-closes">Votação encerra em (opcional)</label>
               <input id="f-closes" type="datetime-local">
               <span class="hint">Sem data, a votação fica aberta até você encerrar.</span>
+            </div>
+            <div class="field">
+              <label class="aopt"><input type="checkbox" id="f-house"><span>🏠 Casa: as contas da casa participam desta enquete</span></label>
+              <span class="hint">Ao confirmar uma resposta, você escolhe quais contas da casa erram (perdem a sequência e ganham o erro no histórico). Se a casa ganhar, as contas escolhidas somam o acerto e mantêm a sequência.</span>
             </div>
             <div class="field" id="f-notify-field">
               <label class="aopt"><input type="checkbox" id="f-notify" checked><span>Notificar os inscritos ao publicar esta enquete</span></label>
@@ -366,6 +365,21 @@
         <div class="actions">
           <button class="btn" type="submit">Confirmar</button>
           <button class="btn ghost" id="house-win-cancel" type="button">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="house-lose-dialog" aria-labelledby="house-lose-title">
+    <div class="dlg">
+      <h2 id="house-lose-title">🏠 Qual casa erra?</h2>
+      <p class="poll-name" id="house-lose-name"></p>
+      <p>Marque as contas da casa que erram esta enquete: elas perdem a sequência e o erro entra no histórico. Contas desmarcadas não participam.</p>
+      <form id="house-lose-form">
+        <div id="house-lose-options" class="house-win-options"></div>
+        <div class="actions">
+          <button class="btn" type="submit">Confirmar resposta</button>
+          <button class="btn ghost" id="house-lose-cancel" type="button">Cancelar</button>
         </div>
       </form>
     </div>

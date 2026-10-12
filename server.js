@@ -176,43 +176,6 @@ function limit(name, max, windowMs) {
 /* ------------------------------------------------------------------ */
 const iso = (d) => (d ? new Date(d).toISOString() : null);
 
-/* ---------- Odd ----------
-   A odd de uma opção é total de votos ÷ votos da opção (só participantes de verdade, sem contas da
-   casa), de 1x a 10x. Acertou: pontos × odd (arredondado). Errou: perde os pontos da enquete.
-   A conta é feita com inteiros (igual no SQL e no JS) pra o arredondamento nunca divergir. */
-const ODD_MAX = 10;
-const roundOdd = (total, n) => Math.round(Math.min(ODD_MAX, total / n) * 100) / 100;
-function oddGain(points, total, n) {
-  if (total > ODD_MAX * n) return points * ODD_MAX;
-  return Math.floor((2 * points * total + n) / (2 * n));
-}
-
-// Pontos de cada voto de enquetes já resolvidas: delta > 0 acertou, < 0 errou numa enquete com odd.
-const VOTE_SCORES_SQL = `
-  select v.poll_id, v.user_id, v.option_id,
-         (v.option_id = p.correct_option_id) as hit,
-         case
-           when not p.odds_enabled or u.is_house then
-             case when v.option_id = p.correct_option_id then p.points else 0 end
-           when v.option_id = p.correct_option_id then
-             case when t.total > ${ODD_MAX} * c.optn then p.points * ${ODD_MAX}
-                  else ((2 * p.points * t.total + c.optn) / (2 * c.optn))::int end
-           else -p.points
-         end as delta
-  from votes v
-  join polls p on p.id = v.poll_id
-  join users u on u.id = v.user_id
-  left join (
-    select v2.poll_id, v2.option_id, count(*) as optn
-    from votes v2 join users u2 on u2.id = v2.user_id and not u2.is_house
-    group by v2.poll_id, v2.option_id
-  ) c on c.poll_id = v.poll_id and c.option_id = v.option_id
-  left join (
-    select v3.poll_id, count(*) as total
-    from votes v3 join users u3 on u3.id = v3.user_id and not u3.is_house
-    group by v3.poll_id
-  ) t on t.poll_id = v.poll_id`;
-
 function rowToPoll(r) {
   return {
     id: r.id,
@@ -225,8 +188,7 @@ function rowToPoll(r) {
     counted: r.counted,
     correctOptionId: r.correct_option_id,
     topicId: r.topic_id,
-    oddsEnabled: r.odds_enabled,
-    oddsLive: r.odds_live,
+    house: Boolean(r.house),
     createdAt: iso(r.created_at),
     resolvedAt: iso(r.resolved_at),
     options: [],
@@ -253,7 +215,7 @@ const houseWon = (p) => p.options.some((o) => o.isHouse && o.id === p.correctOpt
 async function fetchVotes(pollIds) {
   if (!pollIds.length) return new Map();
   const { rows } = await q(
-    `select v.poll_id, v.option_id, v.user_id, u.display_name, u.is_house
+    `select v.poll_id, v.option_id, v.user_id, u.display_name
      from votes v join users u on u.id = v.user_id
      where v.poll_id = any($1::text[])`,
     [pollIds]
@@ -290,11 +252,6 @@ function publicPoll(p, votes, userId) {
   const status = pollStatus(p);
   const mine = userId ? votes.find((v) => v.user_id === userId) : null;
   const showResults = status !== 'open';
-  // Odd: conta só participantes de verdade. Fica escondida enquanto a votação está aberta
-  // (os votos também ficam), a não ser que a enquete tenha "odd ao vivo".
-  const real = votes.filter((v) => !v.is_house);
-  const countOf = (id) => real.filter((v) => v.option_id === id).length;
-  const showOdds = p.oddsEnabled && (showResults || p.oddsLive);
   return {
     id: p.id,
     title: p.title,
@@ -302,8 +259,6 @@ function publicPoll(p, votes, userId) {
     points: p.points,
     closesAt: p.closesAt,
     topicId: p.topicId,
-    oddsEnabled: p.oddsEnabled,
-    oddsLive: p.oddsLive,
     status,
     createdAt: p.createdAt,
     totalVotes: votes.length,
@@ -311,26 +266,20 @@ function publicPoll(p, votes, userId) {
       id: o.id,
       text: o.text,
       votes: showResults ? votes.filter((v) => v.option_id === o.id).length : null,
-      odd: showOdds && countOf(o.id) > 0 ? roundOdd(real.length, countOf(o.id)) : null,
     })),
     myVote: mine ? mine.option_id : null,
     houseWon: status === 'resolved' && houseWon(p),
     correctOptionId: status === 'resolved' && !houseWon(p) ? p.correctOptionId : null,
     myHit: status === 'resolved' && mine ? mine.option_id === p.correctOptionId : null,
-    myPoints: (() => {
-      if (!(status === 'resolved' && mine && p.counted)) return null;
-      const hit = mine.option_id === p.correctOptionId;
-      if (!p.oddsEnabled || mine.is_house) return hit ? p.points : 0;
-      return hit ? oddGain(p.points, real.length, countOf(mine.option_id)) : -p.points;
-    })(),
+    myPoints:
+      status === 'resolved' && mine && p.counted
+        ? (mine.option_id === p.correctOptionId ? p.points : 0)
+        : null,
   };
 }
 
 /* Visão do admin: contagens e nomes de quem votou em cada opção */
 function adminPoll(p, votes) {
-  const real = votes.filter((v) => !v.is_house);
-  const countOf = (id) => real.filter((v) => v.option_id === id).length;
-  const winners = p.correctOptionId ? countOf(p.correctOptionId) : 0;
   return {
     id: p.id,
     title: p.title,
@@ -338,15 +287,12 @@ function adminPoll(p, votes) {
     points: p.points,
     closesAt: p.closesAt,
     topicId: p.topicId,
-    oddsEnabled: p.oddsEnabled,
-    oddsLive: p.oddsLive,
-    // Pontos de quem acertou (já com a odd final) quando a enquete tem resposta
-    hitGain: p.correctOptionId && !houseWon(p) ? (p.oddsEnabled && winners ? oddGain(p.points, real.length, winners) : p.points) : null,
     status: pollStatus(p),
     createdAt: p.createdAt,
     resolvedAt: p.resolvedAt,
     visible: p.visible,
     counted: p.counted,
+    house: p.house,
     correctOptionId: p.correctOptionId,
     totalVotes: votes.length,
     houseWon: houseWon(p),
@@ -355,7 +301,6 @@ function adminPoll(p, votes) {
       id: o.id,
       text: o.text,
       voters: votes.filter((v) => v.option_id === o.id).map((v) => v.display_name),
-      odd: p.oddsEnabled && countOf(o.id) > 0 ? roundOdd(real.length, countOf(o.id)) : null,
     })),
   };
 }
@@ -488,15 +433,15 @@ async function computeStandings() {
     q(
       `select r.user_id, r.poll_title, r.chosen, r.correct, r.points, r.hit, r.at
        from (
-         select s.user_id, p.title as poll_title, oc.label as chosen, cc.label as correct,
-                s.delta as points, s.hit, p.resolved_at as at
-         from (${VOTE_SCORES_SQL}) s
-         join polls p on p.id = s.poll_id
-         left join poll_options oc on oc.id = s.option_id
+         select v.user_id, p.title as poll_title, oc.label as chosen, cc.label as correct,
+                p.points, (v.option_id = p.correct_option_id) as hit, p.resolved_at as at
+         from votes v
+         join polls p on p.id = v.poll_id
+         left join poll_options oc on oc.id = v.option_id
          left join poll_options cc on cc.id = p.correct_option_id
          where p.correct_option_id is not null and p.counted and p.resolved_at > $1
          union all
-         select user_id, poll_title, null, null, coalesce(delta, case when hit then points else 0 end), hit, resolved_at from awards
+         select user_id, poll_title, null, null, points, hit, resolved_at from awards
          where resolved_at is null or resolved_at > $1
        ) r
        order by r.at nulls first, r.poll_title`,
@@ -588,14 +533,13 @@ async function computeStandings() {
       s.misses += 1;
       s.missStreak += 1;
       s.bestMissStreak = Math.max(s.bestMissStreak, s.missStreak);
-      s.points += r.points; // enquete com odd: errar tira pontos (r.points é negativo; sem odd é 0)
     }
     s.history.push({
       title: r.poll_title,
       chosen: r.chosen,
       correct: r.correct,
       hit: r.hit,
-      points: r.points,
+      points: r.hit ? r.points : 0,
       bonus,
       at: iso(r.at),
     });
@@ -643,16 +587,16 @@ async function computeWeeklyStandings() {
     q('select id, display_name, login, avatar_url, is_house from users where not banned'),
     q(
       `select r.user_id,
-              coalesce(sum(r.points), 0)::int as points,
+              coalesce(sum(case when r.hit then r.points else 0 end), 0)::int as points,
               (count(*) filter (where r.hit))::int as hits,
               count(*)::int as played
        from (
-         select s.user_id, s.hit, s.delta as points
-         from (${VOTE_SCORES_SQL}) s
-         join polls p on p.id = s.poll_id
+         select v.user_id, (v.option_id = p.correct_option_id) as hit, p.points
+         from votes v
+         join polls p on p.id = v.poll_id
          where p.correct_option_id is not null and p.counted and p.resolved_at > $1
          union all
-         select user_id, hit, coalesce(delta, case when hit then points else 0 end) from awards
+         select user_id, hit, points from awards
          where resolved_at is null or resolved_at > $1
        ) r
        group by r.user_id`,
@@ -706,7 +650,7 @@ function parsePollInput(body, requireOptions) {
     closesAt = new Date(t).toISOString();
   }
 
-  const out = { title, description, points, closesAt, oddsEnabled: body?.oddsEnabled === true, oddsLive: body?.oddsLive === true };
+  const out = { title, description, points, closesAt, house: body?.house === true };
   if (requireOptions) {
     const raw = Array.isArray(body?.options) ? body.options : [];
     const options = [...new Set(raw.map((o) => String(o).trim()).filter(Boolean))];
@@ -830,31 +774,20 @@ async function notifyPollResult(pollId) {
   const poll = pr[0];
   if (!poll || !poll.correct_option_id) return;
   const { rows } = await q(
-    `select s.endpoint, s.p256dh, s.auth, sc.hit, sc.delta
-     from (${VOTE_SCORES_SQL}) sc
-     join push_subscriptions s on s.user_id = sc.user_id
-     join users u on u.id = sc.user_id and not u.is_house and not u.banned
-     where sc.poll_id = $1`,
-    [pollId]
+    `select s.endpoint, s.p256dh, s.auth, (v.option_id = $2) as hit
+     from votes v
+     join push_subscriptions s on s.user_id = v.user_id
+     join users u on u.id = v.user_id and not u.is_house and not u.banned
+     where v.poll_id = $1`,
+    [pollId, poll.correct_option_id]
   );
   const title = short(poll.title);
-  // Mesmos pontos = mesma mensagem (com odd, cada participante pode ter um valor diferente)
-  const groups = new Map();
-  for (const r of rows) {
-    const key = `${r.hit}:${r.delta}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(r);
-  }
-  for (const list of groups.values()) {
-    const { hit, delta } = list[0];
-    if (hit) {
-      await sendPush(list, { title: '🎯 Você acertou!', body: `+${delta} pontos em "${title}"`, url: '/#ranking' });
-    } else if (delta < 0) {
-      await sendPush(list, { title: 'Resultado da enquete', body: `"${title}": você errou e perdeu ${-delta} pontos.`, url: '/' });
-    } else {
-      await sendPush(list, { title: 'Resultado da enquete', body: `"${title}" já tem resposta. Dessa vez não deu.`, url: '/' });
-    }
-  }
+  await sendPush(rows.filter((r) => r.hit), {
+    title: '🎯 Você acertou!', body: `+${poll.points} pontos em "${title}"`, url: '/#ranking',
+  });
+  await sendPush(rows.filter((r) => !r.hit), {
+    title: 'Resultado da enquete', body: `"${title}" já tem resposta. Dessa vez não deu.`, url: '/',
+  });
 }
 
 /* Lembrete: ~1h antes de fechar, avisa quem ainda não votou (e inscrições sem
@@ -1177,15 +1110,14 @@ app.post('/api/admin/polls', requireAdmin, wrap(async (req, res) => {
         [topicId]
       );
     }
-    await c.query('insert into polls (id, title, description, points, closes_at, topic_id, odds_enabled, odds_live) values ($1, $2, $3, $4, $5, $6, $7, $8)', [
+    await c.query('insert into polls (id, title, description, points, closes_at, topic_id, house) values ($1, $2, $3, $4, $5, $6, $7)', [
       id,
       input.title,
       input.description,
       input.points,
       input.closesAt,
       topicId,
-      input.oddsEnabled,
-      input.oddsEnabled && input.oddsLive,
+      input.house,
     ]);
     for (const [i, o] of input.options.entries()) {
       await c.query('insert into poll_options (id, poll_id, label, position) values ($1, $2, $3, $4)', [o.id, id, o.text, i]);
@@ -1204,19 +1136,16 @@ const notFound = (res) => res.status(404).json({ error: 'Enquete não encontrada
 app.put('/api/admin/polls/:id', requireAdmin, wrap(async (req, res) => {
   const input = parsePollInput(req.body, false);
   if (input.error) return res.status(400).json({ error: input.error });
-  // Ligar/desligar a odd só vale enquanto a enquete não tem resposta (depois, os pontos já foram dados)
   const r = await q(`update polls set title = $2, description = $3, points = $4,
       closing_notified = (closing_notified and closes_at is not distinct from $5::timestamptz), closes_at = $5,
-      odds_enabled = case when correct_option_id is null then $6 else odds_enabled end,
-      odds_live = case when correct_option_id is null then ($6 and $7) else odds_live end
+      house = $6
     where id = $1`, [
     req.params.id,
     input.title,
     input.description,
     input.points,
     input.closesAt,
-    input.oddsEnabled,
-    input.oddsLive,
+    input.house,
   ]);
   if (!r.rowCount) return notFound(res);
   res.json({ ok: true });
@@ -1294,9 +1223,9 @@ app.post('/api/admin/polls/:id/reopen', requireAdmin, wrap(async (req, res) => {
     if (scoring && choice !== 'keep' && choice !== 'zero') return 'choose';
     if (scoring && choice === 'keep') {
       await c.query(
-        `insert into awards (poll_id, poll_title, user_id, hit, points, delta, resolved_at)
-         select p.id, p.title, s.user_id, s.hit, p.points, s.delta, p.resolved_at
-         from polls p join (${VOTE_SCORES_SQL}) s on s.poll_id = p.id
+        `insert into awards (poll_id, poll_title, user_id, hit, points, resolved_at)
+         select p.id, p.title, v.user_id, (v.option_id = p.correct_option_id), p.points, p.resolved_at
+         from polls p join votes v on v.poll_id = p.id
          where p.id = $1`,
         [req.params.id]
       );
@@ -1319,38 +1248,56 @@ app.post('/api/admin/polls/:id/reopen', requireAdmin, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+/* Opção oculta "Casa" da enquete: guarda os votos das contas da casa (criada sob demanda) */
+async function ensureHouseOption(pollId) {
+  return tx(async (c) => {
+    const existing = await c.query('select id from poll_options where poll_id = $1 and is_house limit 1', [pollId]);
+    if (existing.rowCount) return existing.rows[0].id;
+    const { rowCount } = await c.query('select 1 from polls where id = $1', [pollId]);
+    if (!rowCount) return null;
+    const pos = await c.query('select coalesce(max(position), -1) + 1 as n from poll_options where poll_id = $1', [pollId]);
+    const id = uid();
+    await c.query('insert into poll_options (id, poll_id, label, position, is_house) values ($1, $2, $3, $4, true)', [
+      id, pollId, 'Casa', pos.rows[0].n,
+    ]);
+    return id;
+  });
+}
+
+const upsertHouseVote = (pollId, userId, optionId) => q(
+  `insert into votes (poll_id, user_id, option_id) values ($1, $2, $3)
+   on conflict (poll_id, user_id) do update set option_id = excluded.option_id, voted_at = now()`,
+  [pollId, userId, optionId]
+);
+
 app.post('/api/admin/polls/:id/resolve', requireAdmin, wrap(async (req, res) => {
   let optionId;
+  const pollRow = await q('select house from polls where id = $1', [req.params.id]);
+  if (!pollRow.rowCount) return notFound(res);
+  const houseFlag = pollRow.rows[0].house;
+  const pickHouse = async (raw) => {
+    const ids = Array.isArray(raw) ? raw.map(String) : [];
+    if (!ids.length) return [];
+    const { rows } = await q('select id from users where is_house and id = any($1::text[])', [ids]);
+    return rows;
+  };
 
   if (req.body?.house === true) {
     // "A casa ganha": ninguém acertou. Cria (se ainda não existir) uma opção
     // oculta pra essa enquete e "vota" nela só pelas contas da casa escolhidas.
     const ids = Array.isArray(req.body?.houseIds) ? req.body.houseIds.map(String) : [];
     if (!ids.length) return res.status(400).json({ error: 'Escolha pelo menos uma conta da casa.' });
-    const { rows: house } = await q('select id from users where is_house and id = any($1::text[])', [ids]);
+    const house = await pickHouse(ids);
     if (!house.length) {
       return res.status(400).json({ error: 'Nenhuma das contas escolhidas existe mais. Recarregue a página.' });
     }
-    optionId = await tx(async (c) => {
-      const existing = await c.query('select id from poll_options where poll_id = $1 and is_house limit 1', [req.params.id]);
-      if (existing.rowCount) return existing.rows[0].id;
-      const { rowCount } = await c.query('select 1 from polls where id = $1', [req.params.id]);
-      if (!rowCount) return null;
-      const pos = await c.query('select coalesce(max(position), -1) + 1 as n from poll_options where poll_id = $1', [req.params.id]);
-      const id = uid();
-      await c.query('insert into poll_options (id, poll_id, label, position, is_house) values ($1, $2, $3, $4, true)', [
-        id, req.params.id, 'Casa', pos.rows[0].n,
-      ]);
-      return id;
-    });
+    optionId = await ensureHouseOption(req.params.id);
     if (!optionId) return notFound(res);
-    for (const h of house) {
-      await q(
-        `insert into votes (poll_id, user_id, option_id) values ($1, $2, $3)
-         on conflict (poll_id, user_id) do update set option_id = excluded.option_id, voted_at = now()`,
-        [req.params.id, h.id, optionId]
-      );
+    // Enquete com a opção "Casa": só as contas escolhidas ficam com o voto
+    if (houseFlag) {
+      await q('delete from votes where poll_id = $1 and user_id in (select id from users where is_house) and not (user_id = any($2::text[]))', [req.params.id, house.map((h) => h.id)]);
     }
+    for (const h of house) await upsertHouseVote(req.params.id, h.id, optionId);
   } else {
     optionId = String(req.body?.optionId ?? '');
     const { rowCount: valid } = await q(
@@ -1358,6 +1305,16 @@ app.post('/api/admin/polls/:id/resolve', requireAdmin, wrap(async (req, res) => 
       [optionId, req.params.id]
     );
     if (!valid) return res.status(400).json({ error: 'Opção inválida.' });
+    // Enquete com a opção "Casa": as contas escolhidas erram (voto na opção oculta, que
+    // nunca é a certa aqui) — perdem a sequência e o erro entra no histórico.
+    if (houseFlag) {
+      const losers = await pickHouse(req.body?.houseLoseIds);
+      await q('delete from votes where poll_id = $1 and user_id in (select id from users where is_house)', [req.params.id]);
+      if (losers.length) {
+        const houseOpt = await ensureHouseOption(req.params.id);
+        for (const h of losers) await upsertHouseVote(req.params.id, h.id, houseOpt);
+      }
+    }
   }
 
   const prev = await q('select correct_option_id from polls where id = $1', [req.params.id]);
@@ -1449,9 +1406,9 @@ app.delete('/api/admin/polls/:id', requireAdmin, wrap(async (req, res) => {
     if (scoring && choice !== 'keep' && choice !== 'zero') return 'choose';
     if (scoring && choice === 'keep') {
       await c.query(
-        `insert into awards (poll_id, poll_title, user_id, hit, points, delta, resolved_at)
-         select p.id, p.title, s.user_id, s.hit, p.points, s.delta, p.resolved_at
-         from polls p join (${VOTE_SCORES_SQL}) s on s.poll_id = p.id
+        `insert into awards (poll_id, poll_title, user_id, hit, points, resolved_at)
+         select p.id, p.title, v.user_id, (v.option_id = p.correct_option_id), p.points, p.resolved_at
+         from polls p join votes v on v.poll_id = p.id
          where p.id = $1`,
         [req.params.id]
       );
