@@ -1096,6 +1096,9 @@ app.get('/api/admin/polls', requireAdmin, wrap(async (req, res) => {
 app.post('/api/admin/polls', requireAdmin, wrap(async (req, res) => {
   const input = parsePollInput(req.body, true);
   if (input.error) return res.status(400).json({ error: input.error });
+  // Proteção: não deixa criar outra enquete com o mesmo nome (ignora maiúsculas e espaços nas pontas)
+  const dup = await q('select 1 from polls where lower(btrim(title)) = lower($1) limit 1', [input.title]);
+  if (dup.rowCount) return res.status(409).json({ error: 'Já existe uma enquete com esse nome. Use outro nome.' });
   const topicId = String(req.body?.topicId ?? '');
   const topic = await q('select id from poll_topics where id = $1', [topicId]);
   if (!topic.rowCount) return res.status(400).json({ error: 'Escolha o tópico da enquete.' });
