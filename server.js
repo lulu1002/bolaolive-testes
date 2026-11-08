@@ -1794,7 +1794,7 @@ function parseHouseInput(body) {
   return { name, avatarUrl: avatarUrl || null };
 }
 
-app.get('/api/admin/house-accounts', requirePerm('house'), wrap(async (req, res) => {
+app.get('/api/admin/house-accounts', requireAdmin, wrap(async (req, res) => {
   const [{ rows }, st, wk] = await Promise.all([
     q('select id, display_name, avatar_url, created_at from users where is_house order by created_at'),
     computeStandings(),
@@ -1971,7 +1971,7 @@ app.get('/api/hall', wrap(async (req, res) => {
   res.json({ visible: true, weeks: await fetchHall() });
 }));
 
-app.get('/api/admin/hall', requirePerm('ranking'), wrap(async (req, res) => {
+app.get('/api/admin/hall', requireAdmin, wrap(async (req, res) => {
   res.json({ visible: await getFlag('hall_visible'), weeks: await fetchHall() });
 }));
 
@@ -2023,7 +2023,7 @@ app.get('/api/prizes', wrap(async (req, res) => {
   });
 }));
 
-app.get('/api/admin/prizes', requirePerm('prizes'), wrap(async (req, res) => {
+app.get('/api/admin/prizes', requireAdmin, wrap(async (req, res) => {
   const { rows } = await q(PRIZE_SQL);
   res.json({
     notifyPrize: await getFlag('notify_prize'),
@@ -2092,7 +2092,7 @@ app.post('/api/admin/prizes/:id/release', requirePerm('prizes'), wrap(async (req
 }));
 
 /* ---------- Usuários: pontos manuais e banimento ---------- */
-app.get('/api/admin/users', requirePerm('users'), wrap(async (req, res) => {
+app.get('/api/admin/users', requireAdmin, wrap(async (req, res) => {
   const [{ rows }, st, wk] = await Promise.all([
     q('select id, display_name, login, avatar_url, banned, created_at from users where not is_house and not is_test order by lower(display_name)'),
     computeStandings(),
@@ -2248,7 +2248,7 @@ app.post('/api/admin/users/:id/points', requirePerm('users'), wrap(async (req, r
   res.json({ ok: true });
 }));
 
-app.get('/api/admin/users/:id/adjustments', requirePerm('users'), wrap(async (req, res) => {
+app.get('/api/admin/users/:id/adjustments', requireAdmin, wrap(async (req, res) => {
   const { rows } = await q(
     'select id, delta, note, created_at from point_adjustments where user_id = $1 order by created_at desc, id desc limit 15',
     [req.params.id]
@@ -2319,7 +2319,7 @@ app.post('/api/admin/settings', requirePerm('settings'), wrap(async (req, res) =
 }));
 
 /* ---------- Níveis de conquista (configuráveis pelo admin) ---------- */
-app.get('/api/admin/achievements', requirePerm('achievements'), wrap(async (req, res) => {
+app.get('/api/admin/achievements', requireAdmin, wrap(async (req, res) => {
   res.json({ achievements: await fetchAchievementDefs() });
 }));
 

@@ -83,10 +83,27 @@
   let me = { owner: false, permissions: [], name: '' };
   const can = (key) => me.owner || me.permissions.includes(key);
 
+  // Somente leitura: o admin sem permissão vê tudo, mas os controles ficam travados (inclusive os que aparecem depois, nas listas)
+  function lockEl(el) {
+    el.classList.add('readonly');
+    const run = () => el.querySelectorAll('button, input, select, textarea').forEach((c) => {
+      if (!c.closest('[data-keep]')) c.disabled = true;
+    });
+    run();
+    new MutationObserver(run).observe(el, { childList: true, subtree: true });
+    if (el.id.startsWith('apane-') || el.id === 'form-panel') {
+      el.prepend(h('p', { class: 'hint readonly-note' }, '👁️ Somente leitura: seu nível de admin não permite alterar aqui.'));
+    }
+  }
+
   function applyPerms() {
+    // Abas de uso restrito (dono, testes, backup) ficam escondidas; o resto fica visível
     document.querySelectorAll('[data-perm]').forEach((el) => {
       const need = el.dataset.perm.split('|');
       el.hidden = !(need.includes('owner') ? me.owner : need.some(can));
+    });
+    document.querySelectorAll('[data-need]').forEach((el) => {
+      if (!el.dataset.need.split('|').some(can)) lockEl(el);
     });
     $('#whoami').textContent = me.owner ? '👑 Dono' : `👤 ${me.name}`;
     $('#whoami').hidden = false;
@@ -125,7 +142,7 @@
     try {
       await api('/api/admin/login', { method: 'POST', body: { name: $('#admin-name').value, password: $('#admin-pass').value } });
       $('#admin-pass').value = '';
-      showPanel(await api('/api/admin/me'));
+      location.reload(); // recarrega já logado, com o nível de acesso novo e sem sobras de uma sessão anterior
     } catch (err) {
       $('#login-error').textContent = err.message;
     }
@@ -212,7 +229,7 @@
             ? `Resposta certa: ${correct.text}. ${p.hits} de ${p.totalVotes} acertaram (odd ${(p.hits ? p.totalVotes / p.hits : 0).toFixed(2)}x).`
             : `Resposta certa: ${correct.text}. ${p.hits} de ${p.totalVotes} acertaram (+${p.points} pts cada).`)
           : null,
-      can('polls_resolve') && h('fieldset', {}, h('legend', {}, 'Resposta certa'), options),
+      h('fieldset', { disabled: !can('polls_resolve') }, h('legend', {}, 'Resposta certa'), options),
       h('details', { class: 'voters' },
         h('summary', {}, `Quem votou (${p.totalVotes})`),
         p.options.map((o) => h('p', {}, h('b', {}, `${o.text}: `), o.voters.length ? o.voters.join(', ') : 'ninguém'))),
@@ -453,6 +470,7 @@
     const lockBase = Boolean(state.editing) && !can('polls_edit');
     ['#f-title', '#f-desc', '#f-points', '#f-closes', '#f-house'].forEach((s) => { $(s).disabled = lockBase; });
     $('#f-odds').closest('.field').hidden = !can('polls_odds');
+    $('#form-submit').disabled = !state.editing && !can('polls_create'); // sem permissão de criar, só edita
     syncOddsLimits();
   }
   $('#f-odds').addEventListener('change', syncOddsLimits);

@@ -27,7 +27,7 @@ Quem entra com a senha do servidor (`ADMIN_PASSWORD`, deixando o campo "Nome" em
 - **Enquetes:** criar; editar título/descrição/pontos/prazo/casa/tópico; definir odd e tetos; encerrar, reabrir e definir a resposta certa; ocultar/mostrar; excluir.
 - **Outros:** tópicos, contas da casa, usuários (banir/pontos), rankings e pódio, prêmios, conquistas, configurações gerais, aba de testes (que ainda pede a própria senha) e backup.
 
-Há modelos rápidos (Editor de enquetes, Moderador, Todas, Nenhuma). Mudar permissões vale na hora; trocar a senha desconecta o admin; excluir tira o acesso imediatamente. O servidor recusa qualquer ação sem permissão (a tela só esconde os botões). Um admin sem "definir odd" não consegue mudar a odd nem os tetos, mesmo podendo editar o resto da enquete.
+Admins sem permissão **veem tudo em modo somente leitura** (as abas ficam visíveis, com os campos e botões travados e um aviso). Ficam de fora, só para quem tem permissão: as abas Testes e Backup, e Admins e Histórico (só o dono). Há modelos rápidos (Editor de enquetes, Moderador, Todas, Nenhuma). Mudar permissões vale na hora; trocar a senha desconecta o admin; excluir tira o acesso imediatamente. O servidor recusa qualquer ação sem permissão (a tela só esconde os botões). Um admin sem "definir odd" não consegue mudar a odd nem os tetos, mesmo podendo editar o resto da enquete.
 
 ### Histórico de ações
 
