@@ -9,7 +9,6 @@
     polls: [],
     topics: [],
     pollTopic: null,
-    oddsEnabled: false,
     lockVotes: false,
     balance: null,
     bet: {}, // rascunho da aposta por enquete: { [pollId]: { optionId, stake } }
@@ -231,7 +230,6 @@
       const data = await api('/api/polls');
       state.polls = data.polls;
       state.topics = data.topics || [];
-      state.oddsEnabled = Boolean(data.oddsEnabled);
       state.lockVotes = Boolean(data.lockVotes);
       state.balance = data.balance == null ? null : data.balance;
       state.pollsError = null;
@@ -282,7 +280,6 @@
   // Clicar numa opção de enquete com odd só escolhe: a aposta é confirmada no quadro abaixo
   function pickBet(p, optionId) {
     if (!state.user) { toast('Entre com a Twitch para apostar.'); return; }
-    if (!state.oddsEnabled) { toast('As apostas estão desligadas no momento.', true); return; }
     if (state.lockVotes && p.myVote) { toast('Você já apostou e não pode trocar.', true); return; }
     const prev = state.bet[p.id];
     state.bet[p.id] = { optionId, stake: prev ? prev.stake : (p.myStake || '') };
@@ -292,14 +289,16 @@
   function betBox(p) {
     if (p.status !== 'open' || !state.user) return null;
     const draft = state.bet[p.id];
-    const free = state.balance == null ? 0 : state.balance + (p.myStake || 0); // a aposta atual volta pro saldo ao trocar
+    const bal = state.balance == null ? 0 : state.balance + (p.myStake || 0); // a aposta atual volta pro saldo ao trocar
+    const free = p.maxStake ? Math.min(bal, p.maxStake) : bal; // teto da enquete
     const lines = [
       h('p', { class: 'note' }, `Saldo para apostar: `, h('b', {}, `${state.balance == null ? '…' : state.balance} pts`),
         p.myStake != null ? ` · Sua aposta atual: ${p.myStake} pts` : ''),
     ];
-    if (!state.oddsEnabled) {
-      lines.push(h('p', { class: 'note' }, 'As apostas estão desligadas no momento.'));
-    } else if (state.lockVotes && p.myVote) {
+    if (p.maxStake || p.maxWin) {
+      lines.push(h('p', { class: 'note' }, [p.maxStake ? `Aposta máxima: ${p.maxStake} pts` : null, p.maxWin ? `Ganho máximo: +${p.maxWin} pts` : null].filter(Boolean).join(' · ')));
+    }
+    if (state.lockVotes && p.myVote) {
       lines.push(h('p', { class: 'note' }, 'Aposta registrada. Não é possível trocar.'));
     } else if (!draft) {
       lines.push(h('p', { class: 'note' }, p.myVote
@@ -317,7 +316,7 @@
       const update = () => {
         const n = Number(draft.stake);
         preview.textContent = Number.isInteger(n) && n > 0
-          ? `Se acertar com a odd de agora (${oddLabel(opt.odd)}x): +${Math.round(n * opt.odd) - n} pts. Se errar: −${n} pts.`
+          ? `Se acertar com a odd de agora (${oddLabel(opt.odd)}x): +${p.maxWin ? Math.min(Math.round(n * opt.odd) - n, p.maxWin) : Math.round(n * opt.odd) - n} pts. Se errar: −${n} pts.`
           : 'A odd muda conforme mais gente aposta.';
       };
       update();

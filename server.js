@@ -198,6 +198,8 @@ function rowToPoll(r) {
     topicId: r.topic_id,
     house: Boolean(r.house),
     odds: Boolean(r.odds),
+    maxStake: r.max_stake,
+    maxWin: r.max_win,
     createdAt: iso(r.created_at),
     resolvedAt: iso(r.resolved_at),
     options: [],
@@ -244,26 +246,27 @@ async function getFlag(key) {
 }
 const getNotifyEnabled = () => getFlag('notify_enabled'); // aviso de enquete nova
 
-// Apostas com odd: desligadas por padrão, o admin liga em /admin.
-async function getOddsEnabled() {
-  const { rows } = await q("select value from settings where key = 'odds_enabled'");
-  return Boolean(rows[0] && rows[0].value === '1');
-}
-
 /* Odd de uma opção = apostadores no total / apostadores nessa opção (mín. 1,00x).
    Só contam votos com aposta (stake): as contas da casa não entram na conta. */
 const oddOf = (total, onOption) => (onOption > 0 ? total / onOption : null);
 const payoutOf = (stake, total, onOption) => Math.round((stake * total) / onOption);
+// Ganho líquido já com o teto de ganho da enquete (maxWin nulo = sem teto)
+const netWin = (stake, total, onOption, maxWin) => {
+  const net = payoutOf(stake, total, onOption) - stake;
+  return maxWin ? Math.min(net, maxWin) : net;
+};
 
 // Ganho líquido de um voto numa enquete resolvida (aliases: v = votes, p = polls).
 // Sem aposta: regra antiga (p.points se acertou). Com aposta: acertou = stake*odd - stake; errou = -stake.
 const GAIN_SQL = `case
     when v.stake is null then (case when v.option_id = p.correct_option_id then p.points else 0 end)
     when v.option_id = p.correct_option_id then
-      round(v.stake::numeric
-        * (select count(*) from votes t where t.poll_id = v.poll_id and t.stake is not null)
-        / (select count(*) from votes t2 where t2.poll_id = v.poll_id and t2.stake is not null and t2.option_id = v.option_id)
-      )::int - v.stake
+      least(
+        round(v.stake::numeric
+          * (select count(*) from votes t where t.poll_id = v.poll_id and t.stake is not null)
+          / (select count(*) from votes t2 where t2.poll_id = v.poll_id and t2.stake is not null and t2.option_id = v.option_id)
+        )::int - v.stake,
+        coalesce(p.max_win, 2147483647))
     else -v.stake
   end`;
 
@@ -298,7 +301,7 @@ function publicPoll(p, votes, userId) {
   let myNet = null;
   if (p.odds && status === 'resolved' && myBet) {
     myNet = myBet.option_id === p.correctOptionId
-      ? payoutOf(myBet.stake, bets.length, countOn(myBet.option_id)) - myBet.stake
+      ? netWin(myBet.stake, bets.length, countOn(myBet.option_id), p.maxWin)
       : -myBet.stake;
   }
   const round2 = (n) => Math.round(n * 100) / 100;
@@ -313,6 +316,8 @@ function publicPoll(p, votes, userId) {
     createdAt: p.createdAt,
     totalVotes: p.odds ? bets.length : votes.length,
     odds: Boolean(p.odds),
+    maxStake: p.odds ? p.maxStake : null,
+    maxWin: p.odds ? p.maxWin : null,
     options: visibleOptions(p).map((o) => {
       const base = {
         id: o.id,
@@ -356,6 +361,8 @@ function adminPoll(p, votes) {
     counted: p.counted,
     house: p.house,
     odds: p.odds,
+    maxStake: p.maxStake,
+    maxWin: p.maxWin,
     pool: p.odds ? votes.reduce((n, v) => n + (v.stake || 0), 0) : null,
     correctOptionId: p.correctOptionId,
     totalVotes: votes.length,
@@ -720,7 +727,17 @@ function parsePollInput(body, requireOptions) {
     closesAt = new Date(t).toISOString();
   }
 
-  const out = { title, description, points, closesAt, house: body?.house === true, odds: body?.odds === true };
+  // Tetos da enquete com odd (opcionais): vazio = sem limite
+  const limit = (raw) => (raw === undefined || raw === null || raw === '' ? null : Number(raw));
+  const maxStake = limit(body?.maxStake);
+  const maxWin = limit(body?.maxWin);
+  for (const v of [maxStake, maxWin]) {
+    if (v !== null && (!Number.isInteger(v) || v < 1 || v > 1000000)) {
+      return { error: 'Os tetos precisam ser números inteiros entre 1 e 1000000 (ou ficar em branco, sem limite).' };
+    }
+  }
+  const odds = body?.odds === true;
+  const out = { title, description, points, closesAt, house: body?.house === true, odds, maxStake: odds ? maxStake : null, maxWin: odds ? maxWin : null };
   if (requireOptions) {
     const raw = Array.isArray(body?.options) ? body.options : [];
     const options = [...new Set(raw.map((o) => String(o).trim()).filter(Boolean))];
@@ -840,7 +857,7 @@ async function notifyPrizeWon(userName, prizeName) {
    na enquete recebe "acertou +N" ou "dessa vez não deu". */
 async function notifyPollResult(pollId) {
   if (!PUSH_ENABLED || !(await getFlag('notify_result'))) return;
-  const { rows: pr } = await q('select title, points, correct_option_id, odds from polls where id = $1', [pollId]);
+  const { rows: pr } = await q('select title, points, correct_option_id, odds, max_win from polls where id = $1', [pollId]);
   const poll = pr[0];
   if (!poll || !poll.correct_option_id) return;
   const { rows } = await q(
@@ -862,7 +879,7 @@ async function notifyPollResult(pollId) {
     const { total, won } = c.rows[0];
     for (const r of rows.filter((x) => x.stake != null)) {
       if (r.hit) {
-        const net = payoutOf(r.stake, total, won) - r.stake;
+        const net = netWin(r.stake, total, won, poll.max_win);
         await sendPush([r], { title: '🎯 Você acertou!', body: `${net >= 0 ? '+' : ''}${net} pontos em \"${title}\" (odd ${oddOf(total, won).toFixed(2)}x)`, url: '/#ranking' });
       } else {
         await sendPush([r], { title: 'Resultado da enquete', body: `\"${title}\": você perdeu ${r.stake} pontos da aposta.`, url: '/' });
@@ -1075,7 +1092,7 @@ app.get('/api/polls', wrap(async (req, res) => {
   });
   // Saldo só é calculado quando há enquete com odd na página e a pessoa está logada
   const balance = u && polls.some((p) => p.odds) ? await availableBalance(u.id) : null;
-  res.json({ polls, topics: await fetchTopics(), oddsEnabled: await getOddsEnabled(), lockVotes: await getLockVotes(), balance });
+  res.json({ polls, topics: await fetchTopics(), lockVotes: await getLockVotes(), balance });
 }));
 
 /* Saldo para apostar = pontos do ranking geral − o que está apostado em enquetes ainda sem resultado */
@@ -1108,11 +1125,11 @@ async function castVote(pollId, userId, body) {
   }
   if (poll.odds) {
     // Enquete com odd: o palpite vem junto com uma aposta em pontos do ranking
-    if (!(await getOddsEnabled())) return { status: 409, error: 'As apostas estão desligadas no momento.' };
     const stake = Number(body?.stake);
     if (!Number.isInteger(stake) || stake < 1 || stake > 1000000) {
       return { status: 400, error: 'Informe quantos pontos quer apostar (número inteiro, mínimo 1).' };
     }
+    if (poll.maxStake && stake > poll.maxStake) return { status: 400, error: `A aposta máxima desta enquete é ${poll.maxStake} ${poll.maxStake === 1 ? 'ponto' : 'pontos'}.` };
     const points = (await computeStandings()).ranking.find((r) => r.userId === userId)?.points || 0;
     const result = await tx(async (c) => {
       // Trava por pessoa: duas apostas ao mesmo tempo não conseguem gastar o mesmo saldo duas vezes
@@ -1231,7 +1248,6 @@ app.get('/api/admin/polls', requireAdmin, wrap(async (req, res) => {
     notifyResult: await getFlag('notify_result'),
     notifyClosing: await getFlag('notify_closing'),
     hallVisible: await getFlag('hall_visible'),
-    oddsEnabled: await getOddsEnabled(),
     lockVotes: await getLockVotes(),
     pushEnabled: PUSH_ENABLED,
   });
@@ -1246,9 +1262,6 @@ app.post('/api/admin/polls', requireAdmin, wrap(async (req, res) => {
   const topicId = String(req.body?.topicId ?? '');
   const topic = await q('select id from poll_topics where id = $1', [topicId]);
   if (!topic.rowCount) return res.status(400).json({ error: 'Escolha o tópico da enquete.' });
-  if (input.odds && !(await getOddsEnabled())) {
-    return res.status(400).json({ error: 'Ligue "Enquetes com odd" no painel antes de criar uma enquete com apostas.' });
-  }
   const id = uid();
   await tx(async (c) => {
     const mode = await c.query("select value from settings where key = 'mode'");
@@ -1260,7 +1273,7 @@ app.post('/api/admin/polls', requireAdmin, wrap(async (req, res) => {
         [topicId]
       );
     }
-    await c.query('insert into polls (id, title, description, points, closes_at, topic_id, house, odds) values ($1, $2, $3, $4, $5, $6, $7, $8)', [
+    await c.query('insert into polls (id, title, description, points, closes_at, topic_id, house, odds, max_stake, max_win) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)', [
       id,
       input.title,
       input.description,
@@ -1269,6 +1282,8 @@ app.post('/api/admin/polls', requireAdmin, wrap(async (req, res) => {
       topicId,
       input.house,
       input.odds,
+      input.maxStake,
+      input.maxWin,
     ]);
     for (const [i, o] of input.options.entries()) {
       await c.query('insert into poll_options (id, poll_id, label, position) values ($1, $2, $3, $4)', [o.id, id, o.text, i]);
@@ -1292,11 +1307,10 @@ app.put('/api/admin/polls/:id', requireAdmin, wrap(async (req, res) => {
   if (!cur.rowCount) return notFound(res);
   if (cur.rows[0].odds !== input.odds) {
     if (cur.rows[0].n > 0) return res.status(409).json({ error: 'Já existem votos nesta enquete: não dá mais pra ligar ou desligar a odd.' });
-    if (input.odds && !(await getOddsEnabled())) return res.status(400).json({ error: 'Ligue "Enquetes com odd" no painel primeiro.' });
   }
   const r = await q(`update polls set title = $2, description = $3, points = $4,
       closing_notified = (closing_notified and closes_at is not distinct from $5::timestamptz), closes_at = $5,
-      house = $6, odds = $7
+      house = $6, odds = $7, max_stake = $8, max_win = $9
     where id = $1`, [
     req.params.id,
     input.title,
@@ -1305,6 +1319,8 @@ app.put('/api/admin/polls/:id', requireAdmin, wrap(async (req, res) => {
     input.closesAt,
     input.house,
     input.odds,
+    input.maxStake,
+    input.maxWin,
   ]);
   if (!r.rowCount) return notFound(res);
   res.json({ ok: true });
@@ -1867,7 +1883,7 @@ app.get('/api/admin/test-users', requireTests, wrap(async (req, res) => {
     const locked = await lockedStakes(pool, u.id);
     out.push({ id: u.id, name: u.display_name, points: pts.get(u.id) || 0, locked });
   }
-  res.json({ users: out, oddsEnabled: await getOddsEnabled() });
+  res.json({ users: out });
 }));
 
 app.post('/api/admin/test-users', requireTests, wrap(async (req, res) => {
@@ -1911,7 +1927,7 @@ app.post('/api/admin/test-users/random-votes', requireTests, wrap(async (req, re
     if (poll.odds) {
       const free = (pts.get(u.id) || 0) - (await lockedStakes(pool, u.id, poll.id));
       if (free < 1) { skipped.push(u.display_name); continue; }
-      body.stake = 1 + Math.floor(Math.random() * Math.min(free, 100));
+      body.stake = 1 + Math.floor(Math.random() * Math.min(free, 100, poll.maxStake || 100));
     }
     const r = await castVote(poll.id, u.id, body);
     if (r.error) { if (r.status === 409 && !r.locked) return res.status(409).json({ error: r.error }); skipped.push(u.display_name); } else done += 1;
@@ -1987,7 +2003,6 @@ app.post('/api/admin/settings', requireAdmin, wrap(async (req, res) => {
     notifyClosing: 'notify_closing',
     hallVisible: 'hall_visible',
     notifyPrize: 'notify_prize',
-    odds: 'odds_enabled',
     lockVotes: 'lock_votes',
   };
   for (const [field, key] of Object.entries(flagFields)) {
@@ -1995,7 +2010,7 @@ app.post('/api/admin/settings', requireAdmin, wrap(async (req, res) => {
     if (v === undefined) continue;
     if (typeof v !== 'boolean') return res.status(400).json({ error: 'Valor inválido.' });
     entries.push([key, v ? '1' : '0']);
-    if (field === 'hallVisible' || field === 'odds' || field === 'lockVotes') rankingChanged = true; // avisa as páginas abertas
+    if (field === 'hallVisible' || field === 'lockVotes') rankingChanged = true; // avisa as páginas abertas
   }
 
   if (mode !== undefined) {

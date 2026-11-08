@@ -7,16 +7,17 @@ Enquetes com palpites e ranking. O admin publica a enquete, os participantes ent
 - Stack: Node.js + Express + Postgres (Supabase), frontend em HTML/CSS/JS puro
 - No ranking aparece o nome e a foto da conta Twitch de cada participante
 
-## Enquetes com odd (apostas) — opcional
+## Enquetes com odd (apostas)
 
-No painel admin (aba Criar), ligue **Ativar enquetes com odd**. Depois, ao criar uma enquete, marque **Enquete com odd**.
+Ao criar uma enquete no admin, marque **Enquete com odd** (cada enquete decide; dá para misturar com enquetes normais).
 
-- O participante escolhe uma opção e aposta uma quantidade de pontos do **ranking geral** (saldo = total de pontos menos o que já está apostado em enquetes sem resultado). Pode trocar a aposta até a votação encerrar.
+- O participante escolhe uma opção e aposta pontos do **ranking geral** (saldo = total de pontos menos o que já está apostado em enquetes sem resultado). Pode trocar a aposta até a votação encerrar (a menos que a Trava de voto esteja ligada).
 - Odd = total de apostadores ÷ apostadores na opção. Quem acerta recebe `aposta × odd` (ganho líquido = isso − aposta); quem erra perde a aposta. Pouca gente na opção certa = prêmio alto; muita gente = prêmio baixo; todo mundo na mesma opção = devolve a aposta.
+- O admin pode definir, por enquete, uma **aposta máxima** e um **ganho máximo** por pessoa (campos opcionais; em branco = sem limite). O ganho máximo limita o lucro líquido de quem acertar.
 - Se a casa ganhar ("ninguém acertou"), os apostadores perdem a aposta e as contas da casa escolhidas recebem os "Pontos por acerto" da enquete.
 - O ganho/perda entra no ranking geral e no semanal; reabrir ou apagar a enquete mantendo/zerando pontos funciona igual às enquetes normais.
-- Só dá para ligar/desligar a odd de uma enquete antes do primeiro voto. Com a chave geral desligada, não dá mais para apostar nem criar enquete com odd (apostas já feitas continuam valendo no resultado).
-- O banco é atualizado sozinho no deploy (colunas `polls.odds`, `votes.stake`, `awards.gain`).
+- Só dá para ligar/desligar a odd de uma enquete antes do primeiro voto.
+- O banco é atualizado sozinho no deploy (colunas `polls.odds`, `polls.max_stake`, `polls.max_win`, `votes.stake`, `awards.gain`).
 
 ## Trava de voto
 

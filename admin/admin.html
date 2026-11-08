@@ -67,11 +67,6 @@
             <span class="hint">Vale para todas as enquetes (normais e com odd), inclusive as que já têm votos. Desligado, dá para trocar o voto até a votação encerrar.</span>
           </fieldset>
           <fieldset class="modes">
-            <legend>Enquetes com odd (apostas)</legend>
-            <label class="aopt"><input type="checkbox" id="odds-global"><span>🎲 Ativar enquetes com odd: os participantes apostam pontos do ranking</span></label>
-            <span class="hint">Quem acerta recebe a aposta × odd, e a odd é (total de apostadores ÷ apostadores na opção). Pouca gente na opção certa = prêmio alto; muita gente = prêmio baixo. Quem erra perde a aposta. Desligada, não dá para criar enquete com odd nem apostar (apostas já feitas continuam valendo no resultado).</span>
-          </fieldset>
-          <fieldset class="modes">
             <legend>Notificações</legend>
             <label class="aopt"><input type="checkbox" id="notify-global"><span>Enquete nova: avisar os inscritos quando for publicada</span></label>
             <span class="hint" id="notify-global-hint">Chave geral: desligada, nenhuma publicação envia notificação, mesmo com a caixa da enquete marcada.</span>
@@ -108,7 +103,18 @@
             </div>
             <div class="field">
               <label class="aopt"><input type="checkbox" id="f-odds"><span>🎲 Enquete com odd: o participante aposta pontos do ranking</span></label>
-              <span class="hint" id="f-odds-hint">Os “Pontos por acerto” acima não valem nesta enquete (só se a casa ganhar). Só dá para ligar ou desligar antes do primeiro voto.</span>
+              <span class="hint" id="f-odds-hint">Quem acerta recebe aposta × odd (total de apostadores ÷ apostadores na opção); quem erra perde a aposta. Os “Pontos por acerto” acima só valem se a casa ganhar. Só dá para ligar ou desligar antes do primeiro voto.</span>
+            </div>
+            <div id="f-odds-limits" hidden>
+              <div class="field">
+                <label for="f-max-stake">Aposta máxima por pessoa (pontos, opcional)</label>
+                <input id="f-max-stake" type="number" min="1" step="1" placeholder="Sem limite">
+              </div>
+              <div class="field">
+                <label for="f-max-win">Ganho máximo por pessoa (pontos, opcional)</label>
+                <input id="f-max-win" type="number" min="1" step="1" placeholder="Sem limite">
+                <span class="hint">Teto do lucro líquido de quem acertar. Em branco, o prêmio é só aposta × odd.</span>
+              </div>
             </div>
             <div class="field" id="f-notify-field">
               <label class="aopt"><input type="checkbox" id="f-notify" checked><span>Notificar os inscritos ao publicar esta enquete</span></label>
@@ -312,7 +318,7 @@
           <button class="btn" type="submit">Entrar</button>
         </form>
         <div id="tests-body" hidden>
-        <p class="hint">Crie participantes fictícios para testar votos, apostas, odds e ranking sozinho. Eles aparecem no ranking com 🧪, mas não ganham prêmio único nem entram no pódio semanal. Use “Apagar contas de teste” no fim: some tudo deles (votos, pontos, emblemas). Dica: para testar enquete com odd, ligue a chave na aba Criar.</p>
+        <p class="hint">Crie participantes fictícios para testar votos, apostas, odds e ranking sozinho. Eles aparecem no ranking com 🧪, mas não ganham prêmio único nem entram no pódio semanal. Use “Apagar contas de teste” no fim: some tudo deles (votos, pontos, emblemas).</p>
         <div class="field">
           <label for="test-count">Criar contas de teste</label>
           <div class="actions">
