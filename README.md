@@ -35,6 +35,19 @@ Admins sem permissão **veem tudo em modo somente leitura** (as abas ficam visí
 
 Toda ação que muda algo no painel (criar/editar/encerrar/excluir enquete, resultado, pontos, banimentos, configurações, admins…) é registrada com quem fez, o quê e quando. O dono vê na aba **📜 Histórico** (filtro por admin, “carregar mais”). Registros com mais de 6 meses são apagados automaticamente. Senhas e o conteúdo das apostas/contas de teste não entram.
 
+## Bot da Twitch
+
+Aba **🤖 Bot** do admin: o bot escreve no chat da sua live quando (1) uma enquete é criada, (2) sai o resultado e (3) alguém conquista um prêmio (marcando o ganhador com @). Cada aviso liga/desliga e tem mensagem editável, com variáveis como `{titulo}`, `{resposta}`, `{usuario}`, `{premio}`, `{link}`.
+
+Configuração (uma vez):
+1. **App da Twitch do bot:** o bot pode usar o app (Client ID e Secret) de **outra conta**, separado do app do login do site. Crie o app com a conta do bot em dev.twitch.tv/console (tipo de cliente *Confidential*) e defina `BOT_TWITCH_CLIENT_ID` e `BOT_TWITCH_CLIENT_SECRET` no servidor. Sem elas, o bot usa as mesmas credenciais do login. Em **OAuth Redirect URLs** desse app, adicione `https://SEU-SITE/auth/twitch-bot/callback` (a aba mostra a URL exata). Se você trocar essas credenciais depois, é preciso conectar a conta do bot de novo.
+2. Na aba Bot, clique em **Conectar conta do bot** e autorize com a conta que será o bot (pode ser a sua ou uma conta separada). Permissões pedidas: `user:write:chat` e `user:bot`.
+3. Informe o **canal** (login da Twitch), ligue o bot, salve e use **Enviar mensagem de teste**.
+
+A conta do bot tem que ser **separada**: o sistema recusa a conta dona do canal e qualquer conta que já entre no site como participante, e a conta do bot não consegue fazer login no site. Dica: para autorizar com outra conta, use uma janela anônima (a Twitch usa a conta aberta no navegador).
+
+Dica: dê `/mod` ao bot no seu canal, para o chat não barrar mensagens (modo só-seguidores, lentidão etc.). As mensagens saem em fila, uma a cada ~1,5 s. O acesso do bot fica só no servidor (tabela `bot_auth`) e é renovado sozinho. Quem tem a permissão “Bot da Twitch” conecta, configura e testa; os outros admins só veem.
+
 ## Cancelar enquete
 
 O botão **Cancelar e devolver pontos** (permissão “encerrar, reabrir e definir resposta”) deixa a enquete na lista como *Cancelada*: ninguém ganha nem perde pontos por ela, as apostas são devolvidas (o saldo volta na hora) e, se ela já tinha resultado, os pontos que deu ou tirou também saem do ranking. Os votos continuam registrados e **Reabrir votação** desfaz o cancelamento. Para apagar de vez, use Excluir.

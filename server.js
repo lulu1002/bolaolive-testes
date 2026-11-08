@@ -145,6 +145,7 @@ const PERMISSIONS = [
   { key: 'achievements', group: 'Outros', label: 'Gerenciar conquistas' },
   { key: 'settings', group: 'Outros', label: 'Configurações gerais (modo, bônus, notificações, trava de voto)' },
   { key: 'tests', group: 'Outros', label: 'Aba de testes (ainda pede a senha dela)' },
+  { key: 'bot', group: 'Outros', label: 'Bot da Twitch (conectar, configurar e testar)' },
   { key: 'backup', group: 'Outros', label: 'Baixar backup' },
 ];
 const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);
@@ -573,6 +574,8 @@ async function syncPrizes(list, openPrizes, removed, reachByUser) {
       const winner = list.find((s) => s.userId === w.userId);
       notifyPrizeWon(winner ? winner.name : 'Alguém', pz.name)
         .catch((e) => console.error('Notificação de prêmio falhou:', e.message));
+      botNotify('prize', { usuario: (winner && (winner.login || winner.name)) || 'alguém', nome: winner ? winner.name : 'Alguém', premio: pz.name, link: siteUrl() })
+        .catch((e) => console.error('[bot]', e.message));
     }
   }
   const { rows } = await q('select id, name, emoji, image_url, description, holder_id, won_at from prizes where holder_id is not null order by won_at');
@@ -942,6 +945,9 @@ const ADMIN_ACTIONS = [
   ['PUT', /^\/achievements\/[^/]+$/, 'Editou uma conquista', (b) => nameOf(b)],
   ['POST', /^\/achievements\/[^/]+\/active$/, 'Ativou/desativou uma conquista'],
   ['DELETE', /^\/achievements\/[^/]+$/, 'Excluiu uma conquista'],
+  ['POST', /^\/bot\/config$/, 'Mudou a configuração do bot da Twitch'],
+  ['POST', /^\/bot\/test$/, 'Enviou mensagem de teste do bot'],
+  ['POST', /^\/bot\/disconnect$/, 'Desconectou a conta do bot'],
   ['POST', /^\/admins$/, 'Criou um admin', (b) => b?.name],
   ['PUT', /^\/admins\/[^/]+$/, 'Editou um admin', (b, c) => `${c.admin || ''}${b?.password ? ' (senha trocada)' : ''}${b?.permissions ? ' (permissões)' : ''}`],
   ['DELETE', /^\/admins\/[^/]+$/, 'Excluiu um admin', (b, c) => c.admin],
@@ -1194,6 +1200,7 @@ app.get('/auth/twitch/callback', limit('oauth', 60, 15 * 60 * 1000), wrap(async 
     }
     const tw = ((await userRes.json()).data || [])[0];
     if (!tw || !tw.id) return res.redirect('/?login=erro');
+    if ((await botAuth())?.bot_user_id === String(tw.id)) return res.redirect('/?login=bot'); // a conta do bot não vira participante
 
     const avatar =
       typeof tw.profile_image_url === 'string' && tw.profile_image_url.startsWith(TWITCH_AVATAR_PREFIX)
@@ -1592,6 +1599,17 @@ app.post('/api/admin/polls', requirePerm('polls_create'), wrap(async (req, res) 
   if (wantsNotify && (await getNotifyEnabled())) {
     notifyNewPoll(input.title).catch((e) => console.error('Notificação push falhou:', e.message));
   }
+  if (wantsNotify) {
+    // Bot da Twitch: tem as próprias chaves (ligado/desligado e aviso de enquete criada), independentes do push
+    const tipo = input.odds ? 'com aposta de pontos' : input.poolOdds ? 'com prêmio dividido' : input.optionPoints ? 'com pontos por opção' : 'normal';
+    const fecha = input.closesAt
+      ? new Date(input.closesAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+      : 'quando o admin encerrar';
+    botNotify('created', {
+      titulo: input.title, opcoes: input.options.map((o) => o.text).join(' | ').slice(0, 150),
+      tipo, pontos: input.points, fecha, link: baseUrl(req),
+    }).catch((e) => console.error('[bot]', e.message));
+  }
   res.status(201).json({ id });
 }));
 
@@ -1832,6 +1850,7 @@ app.post('/api/admin/polls/:id/resolve', requirePerm('polls_resolve'), wrap(asyn
   // Só avisa na primeira vez que a enquete recebe resposta (corrigir a resposta não reenvia)
   if (!prev.rows[0]?.correct_option_id) {
     notifyPollResult(req.params.id).catch((e) => console.error('Notificação de resultado falhou:', e.message));
+    botPollResult(req.params.id, baseUrl(req)).catch((e) => console.error('[bot]', e.message));
   }
   res.json({ ok: true });
 }));
@@ -2163,6 +2182,336 @@ app.get('/api/admin/users', requireAdmin, wrap(async (req, res) => {
       prizes: gen.has(u.id) ? gen.get(u.id).prizes.length : 0,
     })),
   });
+}));
+
+/* ---------- Bot da Twitch ----------
+   Escreve no chat da Twitch pela API (Send Chat Message), com a conta do bot autorizada por OAuth.
+   Avisos: enquete criada, resultado da enquete e prêmio conquistado (marcando o ganhador). */
+// O bot pode usar o app da Twitch (Client ID/Secret) de OUTRA conta, separado do app do login do site:
+// BOT_TWITCH_CLIENT_ID / BOT_TWITCH_CLIENT_SECRET. Sem elas, usa as mesmas credenciais do login.
+const BOT_OWN_APP = Boolean(process.env.BOT_TWITCH_CLIENT_ID && process.env.BOT_TWITCH_CLIENT_SECRET);
+const BOT_CLIENT_ID = BOT_OWN_APP ? process.env.BOT_TWITCH_CLIENT_ID : TWITCH_CLIENT_ID;
+const BOT_CLIENT_SECRET = BOT_OWN_APP ? process.env.BOT_TWITCH_CLIENT_SECRET : TWITCH_CLIENT_SECRET;
+const BOT_SCOPES = 'user:write:chat user:bot';
+const BOT_DEFAULTS = {
+  created: '📊 Nova enquete no ar: {titulo} — vote em {link}',
+  result: '✅ Resultado de "{titulo}": {resposta}. {acertos} de {total} acertaram ({ganho}).',
+  prize: '🏆 Parabéns @{usuario}! Você conquistou o prêmio "{premio}"!',
+};
+const BOT_PLACEHOLDERS = {
+  created: ['titulo', 'opcoes', 'tipo', 'pontos', 'fecha', 'link'],
+  result: ['titulo', 'resposta', 'acertos', 'total', 'ganho', 'link'],
+  prize: ['usuario', 'nome', 'premio', 'link'],
+};
+const BOT_KINDS = Object.keys(BOT_DEFAULTS);
+
+const siteUrl = () => String(process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '');
+
+async function getSetting(key, fallback = '') {
+  const { rows } = await q('select value from settings where key = $1', [key]);
+  return rows[0] ? rows[0].value : fallback;
+}
+const setSetting = (key, value) => q(
+  'insert into settings (key, value) values ($1, $2) on conflict (key) do update set value = excluded.value',
+  [key, String(value)]
+);
+
+async function botConfig() {
+  const keys = ['bot_enabled', 'bot_channel', 'bot_channel_id', 'bot_last_error', 'bot_last_sent',
+    ...BOT_KINDS.flatMap((k) => [`bot_on_${k}`, `bot_tpl_${k}`])];
+  const { rows } = await q('select key, value from settings where key = any($1)', [keys]);
+  const v = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  return {
+    enabled: v.bot_enabled === '1',
+    channel: v.bot_channel || '',
+    channelId: v.bot_channel_id || '',
+    on: Object.fromEntries(BOT_KINDS.map((k) => [k, v[`bot_on_${k}`] !== '0'])),
+    tpl: Object.fromEntries(BOT_KINDS.map((k) => [k, v[`bot_tpl_${k}`] || BOT_DEFAULTS[k]])),
+    lastError: v.bot_last_error || '',
+    lastSent: v.bot_last_sent || '',
+  };
+}
+
+/* A conta do bot tem que ser separada: não pode ser a dona do canal onde ele escreve nem uma conta que entra no
+   site como participante (senão apareceria no ranking). Devolve 'canal', 'login' ou null. */
+async function botConflict(botUserId, channelId) {
+  if (channelId && String(botUserId) === String(channelId)) return 'canal';
+  const u = await q('select 1 from users where twitch_id = $1 and not is_house and not is_test', [String(botUserId)]);
+  return u.rowCount ? 'login' : null;
+}
+
+const botAuth = async () => {
+  const a = (await q('select * from bot_auth where id = 1')).rows[0] || null;
+  // Conta autorizada por outro app (credenciais trocadas depois): não vale, é preciso conectar de novo
+  return a && a.client_id && a.client_id !== BOT_CLIENT_ID ? null : a;
+};
+
+// Renova o acesso do bot quando está perto de vencer (uma renovação por vez)
+let botRefreshing = null;
+async function botAccessToken(force = false) {
+  const a = await botAuth();
+  if (!a) return null;
+  if (!force && new Date(a.expires_at).getTime() - Date.now() > 60 * 1000) return a;
+  if (!botRefreshing) {
+    botRefreshing = (async () => {
+      const r = await fetch('https://id.twitch.tv/oauth2/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: BOT_CLIENT_ID, client_secret: BOT_CLIENT_SECRET,
+          grant_type: 'refresh_token', refresh_token: a.refresh_token,
+        }),
+      });
+      if (!r.ok) throw new Error('A Twitch recusou renovar o acesso do bot. Conecte a conta do bot de novo.');
+      const j = await r.json();
+      const fresh = {
+        ...a, access_token: j.access_token, refresh_token: j.refresh_token || a.refresh_token,
+        expires_at: new Date(Date.now() + (Number(j.expires_in) || 3600) * 1000),
+      };
+      await q('update bot_auth set access_token = $1, refresh_token = $2, expires_at = $3, updated_at = now() where id = 1',
+        [fresh.access_token, fresh.refresh_token, fresh.expires_at]);
+      return fresh;
+    })().finally(() => { botRefreshing = null; });
+  }
+  return botRefreshing;
+}
+
+async function helixSend(text) {
+  const cfg = await botConfig();
+  let a = await botAccessToken();
+  if (!a) throw new Error('A conta do bot não está conectada.');
+  if (!cfg.channelId) throw new Error('Nenhum canal configurado para o bot.');
+  const post = (token) => fetch('https://api.twitch.tv/helix/chat/messages', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Client-Id': BOT_CLIENT_ID, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ broadcaster_id: cfg.channelId, sender_id: a.bot_user_id, message: text }),
+  });
+  let res = await post(a.access_token);
+  if (res.status === 401) { a = await botAccessToken(true); res = await post(a.access_token); }
+  if (!res.ok) throw new Error(`A Twitch respondeu ${res.status}: ${(await res.text()).slice(0, 160)}`);
+  const d = ((await res.json()).data || [])[0];
+  if (d && d.is_sent === false) throw new Error(`A Twitch barrou a mensagem (${(d.drop_reason && (d.drop_reason.message || d.drop_reason.code)) || 'sem motivo'}).`);
+}
+
+// Fila: uma mensagem por vez com intervalo, para não estourar o limite do chat nem fazer spam
+const botQueue = [];
+let botBusy = false;
+function botEnqueue(text) {
+  if (botQueue.length >= 30) botQueue.shift();
+  botQueue.push(text);
+  botPump();
+}
+async function botPump() {
+  if (botBusy) return;
+  botBusy = true;
+  try {
+    while (botQueue.length) {
+      const text = botQueue.shift();
+      try {
+        await helixSend(text);
+        await setSetting('bot_last_error', '');
+        await setSetting('bot_last_sent', new Date().toISOString());
+      } catch (e) {
+        console.error('[bot]', e.message);
+        await setSetting('bot_last_error', `${new Date().toISOString()} ${e.message}`.slice(0, 300)).catch(() => {});
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  } finally {
+    botBusy = false;
+  }
+}
+
+function botFill(template, vars) {
+  let text = template.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]).replace(/[\r\n]+/g, ' ').trim() : m));
+  text = text.replace(/\s+/g, ' ').trim();
+  if (/^[/.\\]/.test(text)) text = `› ${text}`; // nada que comece como comando do chat
+  return text.length > 480 ? `${text.slice(0, 479)}…` : text;
+}
+
+async function botNotify(kind, vars) {
+  const cfg = await botConfig();
+  if (!cfg.enabled || !cfg.on[kind] || !cfg.channelId || !(await botAuth())) return;
+  botEnqueue(botFill(cfg.tpl[kind], vars));
+}
+
+async function botPollResult(pollId, link) {
+  const cfg = await botConfig();
+  if (!cfg.enabled || !cfg.on.result) return;
+  const { rows: pr } = await q('select title, points, correct_option_id, odds, pool_odds, option_points, max_win from polls where id = $1', [pollId]);
+  const p = pr[0];
+  if (!p || !p.correct_option_id) return;
+  const opt = (await q('select label, is_house, points from poll_options where id = $1', [p.correct_option_id])).rows[0];
+  if (!opt) return;
+  const c = (await q(
+    `select (count(*) filter (where not u.is_house))::int as total,
+            (count(*) filter (where not u.is_house and v.option_id = $2))::int as won,
+            (count(*) filter (where v.option_id = $2))::int as won_all
+     from votes v join users u on u.id = v.user_id where v.poll_id = $1`,
+    [pollId, p.correct_option_id]
+  )).rows[0];
+  const money = (n) => `+${n} ${n === 1 ? 'pt' : 'pts'}`;
+  let ganho;
+  if (opt.is_house) ganho = 'a casa levou os pontos';
+  else if (p.odds) ganho = c.won ? `odd ${(c.total / c.won).toFixed(2).replace('.', ',')}x` : 'sem ganhadores';
+  else if (p.option_points) ganho = money(opt.points ?? p.points);
+  else if (p.pool_odds) {
+    let share = Math.floor(p.points / Math.max(1, c.won_all));
+    if (p.max_win) share = Math.min(share, p.max_win);
+    ganho = `${money(share)} cada`;
+  } else ganho = money(p.points);
+  await botNotify('result', {
+    titulo: p.title, resposta: opt.is_house ? 'ninguém acertou' : opt.label,
+    acertos: opt.is_house ? 0 : c.won, total: c.total, ganho, link,
+  });
+}
+
+app.get('/api/admin/bot', requireAdmin, wrap(async (req, res) => {
+  const [cfg, auth] = await Promise.all([botConfig(), botAuth()]);
+  res.json({
+    twitchConfigured: Boolean(BOT_CLIENT_ID && BOT_CLIENT_SECRET),
+    ownApp: BOT_OWN_APP,
+    connected: Boolean(auth), botLogin: auth ? auth.bot_login : null,
+    enabled: cfg.enabled, channel: cfg.channel, on: cfg.on, tpl: cfg.tpl,
+    defaults: BOT_DEFAULTS, placeholders: BOT_PLACEHOLDERS,
+    conflict: auth ? await botConflict(auth.bot_user_id, cfg.channelId) : null,
+    lastError: cfg.lastError, lastSent: cfg.lastSent,
+    redirectUri: `${baseUrl(req)}/auth/twitch-bot/callback`,
+  });
+}));
+
+app.post('/api/admin/bot/config', requirePerm('bot'), wrap(async (req, res) => {
+  const b = req.body || {};
+  const channel = String(b.channel ?? '').trim().replace(/^#/, '').toLowerCase();
+  if (channel && !/^[a-z0-9_]{3,25}$/.test(channel)) return res.status(400).json({ error: 'Canal inválido: use o login da Twitch (letras, números e _).' });
+  const tpl = {};
+  for (const k of BOT_KINDS) {
+    const t = String(b.tpl?.[k] ?? '').trim();
+    if (t.length > 300) return res.status(400).json({ error: 'Cada mensagem pode ter no máximo 300 caracteres.' });
+    tpl[k] = t || BOT_DEFAULTS[k];
+  }
+  const auth = await botAuth();
+  let channelId = await getSetting('bot_channel_id');
+  if (channel && (channel !== (await getSetting('bot_channel')) || !channelId)) {
+    if (!auth) return res.status(409).json({ error: 'Conecte a conta do bot antes de definir o canal.' });
+    try {
+      const a = await botAccessToken();
+      const r = await fetch(`https://api.twitch.tv/helix/users?login=${encodeURIComponent(channel)}`, {
+        headers: { Authorization: `Bearer ${a.access_token}`, 'Client-Id': BOT_CLIENT_ID },
+      });
+      if (!r.ok) throw new Error(`A Twitch respondeu ${r.status} ao procurar o canal.`);
+      const found = ((await r.json()).data || [])[0];
+      if (!found) return res.status(400).json({ error: 'Canal não encontrado na Twitch.' });
+      channelId = found.id;
+    } catch (e) {
+      return res.status(502).json({ error: e.message });
+    }
+  }
+  if (!channel) channelId = '';
+  if (auth && channelId && String(auth.bot_user_id) === String(channelId)) {
+    return res.status(400).json({ error: 'A conta do bot não pode ser a dona do canal. Conecte uma conta separada, só para o bot.' });
+  }
+  const enabled = b.enabled === true;
+  if (enabled && (!auth || !channel)) return res.status(400).json({ error: 'Para ligar o bot, conecte a conta dele e informe o canal.' });
+  await setSetting('bot_enabled', enabled ? '1' : '0');
+  await setSetting('bot_channel', channel);
+  await setSetting('bot_channel_id', channelId);
+  for (const k of BOT_KINDS) {
+    await setSetting(`bot_on_${k}`, b.on?.[k] === false ? '0' : '1');
+    await setSetting(`bot_tpl_${k}`, tpl[k]);
+  }
+  res.json({ ok: true });
+}));
+
+app.post('/api/admin/bot/test', requirePerm('bot'), limit('bot-test', 6, 60 * 1000), wrap(async (req, res) => {
+  try {
+    await helixSend('🤖 Teste do bot do Bolão: está funcionando!');
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+}));
+
+app.post('/api/admin/bot/disconnect', requirePerm('bot'), wrap(async (req, res) => {
+  const a = await botAuth();
+  if (a) {
+    fetch('https://id.twitch.tv/oauth2/revoke', { // avisa a Twitch (se falhar, tudo bem)
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: BOT_CLIENT_ID, token: a.access_token }),
+    }).catch(() => {});
+  }
+  await q('delete from bot_auth where id = 1');
+  await setSetting('bot_enabled', '0');
+  res.json({ ok: true });
+}));
+
+// Conectar a conta do bot: o admin é levado à Twitch para autorizar (com a conta do bot) e volta no callback
+app.get('/api/admin/bot/connect', requirePerm('bot'), (req, res) => {
+  if (!BOT_CLIENT_ID || !BOT_CLIENT_SECRET) return res.status(503).type('text').send('Credenciais do bot não configuradas (BOT_TWITCH_CLIENT_ID e BOT_TWITCH_CLIENT_SECRET).');
+  const state = crypto.randomBytes(16).toString('hex');
+  setCookie(res, 'bot_state', state, 600);
+  res.redirect(`https://id.twitch.tv/oauth2/authorize?${new URLSearchParams({
+    client_id: BOT_CLIENT_ID,
+    redirect_uri: `${baseUrl(req)}/auth/twitch-bot/callback`,
+    response_type: 'code',
+    scope: BOT_SCOPES,
+    state,
+    force_verify: 'true', // sempre pergunta qual conta, para dar para escolher a do bot
+  })}`);
+});
+
+app.get('/auth/twitch-bot/callback', limit('oauth', 60, 15 * 60 * 1000), wrap(async (req, res) => {
+  req.admin = await getAdmin(req);
+  if (!req.admin || !can(req, 'bot')) return res.status(401).type('text').send('Entre no painel admin (com permissão do bot) e tente conectar de novo.');
+  const back = (r) => res.redirect(`/${ADMIN_PATH}?bot=${r}`);
+  const saved = parseCookies(req).bot_state;
+  setCookie(res, 'bot_state', '', 0);
+  const { code, state, error } = req.query;
+  if (error) return back('cancelado');
+  if (typeof code !== 'string' || typeof state !== 'string' || !saved || state !== saved) return back('erro');
+  try {
+    const tr = await fetch('https://id.twitch.tv/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: BOT_CLIENT_ID, client_secret: BOT_CLIENT_SECRET, code,
+        grant_type: 'authorization_code', redirect_uri: `${baseUrl(req)}/auth/twitch-bot/callback`,
+      }),
+    });
+    if (!tr.ok) { console.error('[bot] token respondeu', tr.status, await tr.text()); return back('erro'); }
+    const tok = await tr.json();
+    const ur = await fetch('https://api.twitch.tv/helix/users', {
+      headers: { Authorization: `Bearer ${tok.access_token}`, 'Client-Id': BOT_CLIENT_ID },
+    });
+    const tw = ur.ok ? ((await ur.json()).data || [])[0] : null;
+    if (!tw || !tok.refresh_token) return back('erro');
+    // Conta separada: recusa a conta do próprio canal e contas que já entram no site como participantes
+    const conflict = await botConflict(tw.id, await getSetting('bot_channel_id'));
+    if (conflict) {
+      fetch('https://id.twitch.tv/oauth2/revoke', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ client_id: BOT_CLIENT_ID, token: tok.access_token }),
+      }).catch(() => {});
+      return back(conflict === 'canal' ? 'conta-canal' : 'conta-login');
+    }
+    await q(
+      `insert into bot_auth (id, bot_user_id, bot_login, access_token, refresh_token, expires_at, client_id)
+       values (1, $1, $2, $3, $4, $5, $6)
+       on conflict (id) do update set bot_user_id = excluded.bot_user_id, bot_login = excluded.bot_login,
+         access_token = excluded.access_token, refresh_token = excluded.refresh_token,
+         expires_at = excluded.expires_at, client_id = excluded.client_id, updated_at = now()`,
+      [String(tw.id), String(tw.login), tok.access_token, tok.refresh_token, new Date(Date.now() + (Number(tok.expires_in) || 3600) * 1000), BOT_CLIENT_ID]
+    );
+    await q('insert into admin_log (admin_id, admin_name, action, detail) values ($1, $2, $3, $4)', [
+      req.admin.id, req.admin.owner ? 'Dono' : req.admin.name, 'Conectou a conta do bot da Twitch', String(tw.login),
+    ]);
+    back('ok');
+  } catch (e) {
+    console.error('[bot] conexão falhou:', e.message);
+    back('erro');
+  }
 }));
 
 /* ---------- Painel de testes: contas fictícias de teste ----------

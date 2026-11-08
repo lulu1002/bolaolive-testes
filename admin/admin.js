@@ -77,7 +77,7 @@
     $('#admin-pass').focus();
   }
 
-  const ADMIN_TABS = ['create', 'polls', 'house', 'streak', 'ach', 'prizes', 'hall', 'users', 'tests', 'admins', 'log', 'backup'];
+  const ADMIN_TABS = ['create', 'polls', 'house', 'streak', 'ach', 'prizes', 'hall', 'users', 'tests', 'admins', 'bot', 'log', 'backup'];
 
   // Nível de acesso de quem está logado (vem de /api/admin/me). O servidor confere tudo de novo; aqui só se esconde o que não vale.
   let me = { owner: false, permissions: [], name: '' };
@@ -122,6 +122,7 @@
     if (tab === 'tests') loadTests();
     if (tab === 'admins') loadAdmins();
     if (tab === 'log') loadLog(true);
+    if (tab === 'bot') loadBot();
   }
   ADMIN_TABS.forEach((t) => $(`#atab-${t}`).addEventListener('click', () => setAdminTab(t)));
 
@@ -1021,6 +1022,90 @@
   });
   $('#adm-cancel').addEventListener('click', resetAdminForm);
 
+  /* ---------- Bot da Twitch ---------- */
+  const BOT_EVENTS = [
+    ['created', 'Enquete criada'],
+    ['result', 'Resultado da enquete'],
+    ['prize', 'Prêmio conquistado (marca o ganhador)'],
+  ];
+  const botState = { data: null };
+
+  function renderBot() {
+    const d = botState.data;
+    const box = $('#bot-status');
+    const rows = [];
+    if (!d.twitchConfigured) {
+      rows.push(h('p', { class: 'error' }, 'O servidor está sem as credenciais do bot (BOT_TWITCH_CLIENT_ID e BOT_TWITCH_CLIENT_SECRET): o bot não consegue conectar.'));
+    }
+    rows.push(h('div', { class: 'house-row' },
+      h('span', { class: 'nm' }, d.connected ? h('span', {}, '✅ Conta do bot conectada: ', h('b', {}, d.botLogin)) : '⚠️ Nenhuma conta de bot conectada'),
+      can('bot') && d.twitchConfigured ? h('a', { class: 'btn ghost small', href: '/api/admin/bot/connect' }, d.connected ? 'Trocar conta' : 'Conectar conta do bot') : null,
+      can('bot') && d.connected ? h('button', { class: 'btn danger small', type: 'button', onclick: disconnectBot }, 'Desconectar') : null));
+    rows.push(h('p', { class: 'hint' }, d.ownApp
+      ? '🔑 O bot usa o app da Twitch próprio (BOT_TWITCH_CLIENT_ID / BOT_TWITCH_CLIENT_SECRET), separado do login do site.'
+      : 'O bot está usando as mesmas credenciais do login do site. Para usar o app de outra conta, defina BOT_TWITCH_CLIENT_ID e BOT_TWITCH_CLIENT_SECRET no servidor.'));
+    if (d.conflict) {
+      rows.push(h('p', { class: 'error' }, d.conflict === 'canal'
+        ? '⚠️ A conta do bot é a dona do canal. Conecte uma conta separada, só para o bot.'
+        : '⚠️ A conta do bot também entra no site como participante. Conecte uma conta separada, só para o bot.'));
+    }
+    rows.push(h('p', { class: 'hint' }, 'O bot precisa ser uma conta diferente da sua (a de login e a do canal). Para autorizar com outra conta, abra o botão numa janela anônima ou saia da Twitch antes: a Twitch usa a conta que estiver aberta no navegador. Na hora de autorizar, entre com a conta que vai ser o bot. Cadastre esta URL em “OAuth Redirect URLs” do app da Twitch do bot: ', h('code', {}, d.redirectUri)));
+    box.replaceChildren(...rows);
+
+    $('#bot-enabled').checked = d.enabled;
+    $('#bot-channel').value = d.channel;
+    $('#bot-events').replaceChildren(...BOT_EVENTS.map(([k, label]) => h('fieldset', { class: 'modes' },
+      h('legend', {}, label),
+      h('label', { class: 'aopt' }, h('input', { type: 'checkbox', id: `bot-on-${k}`, checked: d.on[k] }), h('span', {}, 'Avisar no chat')),
+      h('textarea', { id: `bot-tpl-${k}`, rows: 2, maxlength: 300, class: 'bot-tpl' }, d.tpl[k]),
+      h('span', { class: 'hint' }, `Variáveis: ${d.placeholders[k].map((v) => `{${v}}`).join(' ')}`),
+      h('div', { class: 'actions' }, h('button', { class: 'btn ghost small', type: 'button', onclick: () => { $(`#bot-tpl-${k}`).value = d.defaults[k]; } }, 'Restaurar padrão')))));
+    $('#bot-last').textContent = d.lastError
+      ? `Último erro: ${d.lastError}`
+      : (d.lastSent ? `Última mensagem enviada: ${fmtDate(d.lastSent)}` : '');
+  }
+
+  async function loadBot() {
+    try {
+      botState.data = await api('/api/admin/bot');
+      renderBot();
+    } catch (e) {
+      handleError(e);
+    }
+  }
+
+  async function disconnectBot() {
+    if (!confirm('Desconectar a conta do bot? Ele para de escrever no chat até você conectar de novo.')) return;
+    await act(() => api('/api/admin/bot/disconnect', { method: 'POST' }), 'Bot desconectado');
+    loadBot();
+  }
+
+  $('#bot-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('#bot-error').textContent = '';
+    const body = { enabled: $('#bot-enabled').checked, channel: $('#bot-channel').value, on: {}, tpl: {} };
+    BOT_EVENTS.forEach(([k]) => { body.on[k] = $(`#bot-on-${k}`).checked; body.tpl[k] = $(`#bot-tpl-${k}`).value; });
+    try {
+      await api('/api/admin/bot/config', { method: 'POST', body });
+      toast('Configuração do bot salva');
+      loadBot();
+    } catch (err) {
+      if (err.status === 401) handleError(err);
+      else $('#bot-error').textContent = err.message;
+    }
+  });
+  $('#bot-test').addEventListener('click', async () => {
+    $('#bot-error').textContent = '';
+    try {
+      await api('/api/admin/bot/test', { method: 'POST' });
+      toast('Mensagem de teste enviada');
+      loadBot();
+    } catch (err) {
+      if (err.status === 401) handleError(err);
+      else $('#bot-error').textContent = err.message;
+    }
+  });
+
   /* ---------- Histórico de ações (só o dono) ---------- */
   const logState = { last: null };
 
@@ -1485,7 +1570,20 @@
   (async function init() {
     try {
       const info = await api('/api/admin/me');
-      if (info.admin) showPanel(info);
+      if (info.admin) {
+        showPanel(info);
+        const botResult = new URLSearchParams(location.search).get('bot');
+        if (botResult) {
+          history.replaceState(null, '', location.pathname);
+          setAdminTab('bot');
+          toast({
+            ok: 'Conta do bot conectada',
+            cancelado: 'Conexão cancelada',
+            'conta-canal': 'Essa é a conta dona do canal. Use uma conta separada para o bot.',
+            'conta-login': 'Essa conta já entra no site como participante. Use uma conta separada para o bot.',
+          }[botResult] || 'Não foi possível conectar a conta do bot', botResult !== 'ok');
+        }
+      }
       else showLogin();
     } catch (e) {
       showLogin();

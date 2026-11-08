@@ -851,6 +851,7 @@
     if (!result) return;
     if (result === 'cancelado') toast('Login cancelado.');
     else if (result === 'banido') toast('Esta conta foi banida do bolão.', true);
+    else if (result === 'bot') toast('Esta conta é o bot do bolão e não pode participar. Entre com outra conta.', true);
     else toast('Não foi possível entrar com a Twitch. Tente de novo.', true);
     history.replaceState(null, '', location.pathname + location.hash);
   }
