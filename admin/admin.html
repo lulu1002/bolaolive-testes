@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Painel admin · Bolão</title>
+  <meta name="theme-color" content="#14237A">
+  <meta name="color-scheme" content="light dark">
+  <script src="/theme.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap wide admin-head">
+      <a class="brand" href="%ADMIN_PATH%">Bolão<small>Painel admin</small></a>
+      <div class="actions">
+        <button id="theme-toggle" class="icon-btn" type="button" title="Mudar o tema" aria-label="Mudar o tema">🌙</button>
+        <a class="btn ghost small" href="/">Ver o site</a>
+        <span class="hint" id="whoami" hidden></span>
+        <button class="btn ghost small" id="logout" type="button" hidden>Sair</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap wide main">
+    <section id="login" class="panel narrow" hidden>
+      <h1>Acesso do admin</h1>
+      <form id="login-form">
+        <div class="field">
+          <label for="admin-name">Nome do admin</label>
+          <input id="admin-name" autocomplete="username" maxlength="30" placeholder="Em branco = dono">
+          <span class="hint">Deixe em branco se você é o dono (senha definida no servidor).</span>
+        </div>
+        <div class="field">
+          <label for="admin-pass">Senha do admin</label>
+          <input id="admin-pass" type="password" autocomplete="current-password" required>
+        </div>
+        <p class="error" id="login-error" role="alert"></p>
+        <button class="btn" type="submit">Entrar</button>
+      </form>
+    </section>
+
+    <div id="panel" hidden>
+      <nav class="admin-tabs" role="tablist" aria-label="Seções do painel">
+        <button type="button" role="tab" id="atab-create" aria-controls="apane-create" aria-selected="false">✏️ Criar</button>
+        <button type="button" role="tab" id="atab-polls" aria-controls="apane-polls" aria-selected="true">Enquetes</button>
+        <button type="button" role="tab" id="atab-house" aria-controls="apane-house" aria-selected="false">🏠 Casa</button>
+        <button type="button" role="tab" id="atab-streak" aria-controls="apane-streak" aria-selected="false">Bônus</button>
+        <button type="button" role="tab" id="atab-ach" aria-controls="apane-ach" aria-selected="false">Conquistas</button>
+        <button type="button" role="tab" id="atab-prizes" aria-controls="apane-prizes" aria-selected="false">🏅 Prêmio</button>
+        <button type="button" role="tab" id="atab-hall" aria-controls="apane-hall" aria-selected="false">🏆pódio semanal</button>
+        <button type="button" role="tab" id="atab-users" aria-controls="apane-users" aria-selected="false">👥 Os meliantes </button>
+        <button type="button" role="tab" id="atab-tests" data-perm="tests" aria-controls="apane-tests" aria-selected="false">🧪 Testes</button>
+        <button type="button" role="tab" id="atab-admins" aria-controls="apane-admins" aria-selected="false" data-perm="owner">🔑 Admins</button>
+        <button type="button" role="tab" id="atab-log" aria-controls="apane-log" aria-selected="false" data-perm="owner">📜 Histórico</button>
+        <button type="button" role="tab" id="atab-backup" data-perm="backup" aria-controls="apane-backup" aria-selected="false">Backup</button>
+      </nav>
+
+      <div id="apane-create" role="tabpanel" aria-labelledby="atab-create" hidden>
+        <section class="panel narrow-md" id="form-panel" data-need="polls_create|polls_edit|polls_odds">
+          <h2 id="form-title">Nova enquete</h2>
+          <fieldset class="modes" data-need="settings">
+            <legend>Ao publicar uma nova enquete (vale dentro do mesmo tópico)</legend>
+            <label class="aopt"><input type="radio" name="mode" value="replace"><span>Substituir a enquete do mesmo tópico na página principal</span></label>
+            <label class="aopt"><input type="radio" name="mode" value="accumulate"><span>Acumular com as anteriores</span></label>
+            <span class="hint">Enquetes substituídas saem da página, mas continuam aqui no painel e valem pontos quando você define a resposta.</span>
+          </fieldset>
+          <fieldset class="modes" data-need="settings">
+            <legend>Trava de voto</legend>
+            <label class="aopt"><input type="checkbox" id="lock-votes"><span>🔒 Não deixar o participante trocar o voto: votou, está votado</span></label>
+            <span class="hint">Vale para todas as enquetes (normais e com odd), inclusive as que já têm votos. Desligado, dá para trocar o voto até a votação encerrar.</span>
+          </fieldset>
+          <fieldset class="modes" data-need="settings">
+            <legend>Notificações</legend>
+            <label class="aopt"><input type="checkbox" id="notify-global"><span>Enquete nova: avisar os inscritos quando for publicada</span></label>
+            <span class="hint" id="notify-global-hint">Chave geral: desligada, nenhuma publicação envia notificação, mesmo com a caixa da enquete marcada.</span>
+            <label class="aopt"><input type="checkbox" id="notify-result"><span>Resultado: avisar cada participante se acertou ou não, quando você define a resposta</span></label>
+            <label class="aopt"><input type="checkbox" id="notify-closing"><span>Enquete fechando: lembrar, cerca de 1 hora antes, quem ainda não votou</span></label>
+            <span class="hint" id="notify-extra-hint"></span>
+          </fieldset>
+          <form id="poll-form">
+            <div class="field">
+              <label for="f-title">Pergunta</label>
+              <input id="f-title" maxlength="200" required>
+            </div>
+            <div class="field">
+              <label for="f-desc">Descrição (opcional)</label>
+              <textarea id="f-desc" rows="3" maxlength="1000"></textarea>
+            </div>
+            <div class="field">
+              <label for="f-options">Opções</label>
+              <textarea id="f-options" rows="4" placeholder="Uma opção por linha"></textarea>
+              <span class="hint" id="f-options-hint">De 1 a 10 opções, uma por linha.</span>
+            </div>
+            <div class="field">
+              <label for="f-points">Pontos por acerto</label>
+              <input id="f-points" type="number" min="1" max="1000" step="1" value="10">
+            </div>
+            <div class="field">
+              <label for="f-closes">Votação encerra em (opcional)</label>
+              <input id="f-closes" type="datetime-local">
+              <span class="hint">Sem data, a votação fica aberta até você encerrar.</span>
+            </div>
+            <div class="field">
+              <label class="aopt"><input type="checkbox" id="f-house"><span>🏠 Casa: as contas da casa participam desta enquete</span></label>
+              <span class="hint">Ao confirmar uma resposta, você escolhe quais contas da casa erram (perdem a sequência e ganham o erro no histórico). Se a casa ganhar, as contas escolhidas somam o acerto e mantêm a sequência.</span>
+            </div>
+            <div class="field">
+              <label class="aopt"><input type="checkbox" id="f-opt-points"><span>🎯 Pontos por opção: cada opção tem a sua pontuação</span></label>
+              <span class="hint">Escreva as opções no formato <code>Texto | pontos</code> (uma por linha). Quem votar na opção certa leva os pontos dela; quem errar leva 0. Não combina com odd e não dá para mudar depois de publicar.</span>
+            </div>
+            <div class="field">
+              <label class="aopt"><input type="checkbox" id="f-odds"><span>🎲 Enquete com odd: o participante aposta pontos do ranking</span></label>
+              <span class="hint" id="f-odds-hint">Quem acerta recebe aposta × odd (total de apostadores ÷ apostadores na opção); quem erra perde a aposta. Os “Pontos por acerto” acima só valem se a casa ganhar. Só dá para ligar ou desligar antes do primeiro voto.</span>
+            </div>
+            <div id="f-odds-limits" hidden>
+              <div class="field">
+                <label for="f-odds-kind">Tipo de odd</label>
+                <select id="f-odds-kind">
+                  <option value="stake">Aposta: cada participante usa pontos do próprio ranking</option>
+                  <option value="pool">Prêmio fixo: os pontos da enquete são divididos entre quem acertar</option>
+                </select>
+                <span class="hint" id="f-odds-kind-hint"></span>
+              </div>
+              <div class="field" id="f-max-stake-field">
+                <label for="f-max-stake">Aposta máxima por pessoa (pontos, opcional)</label>
+                <input id="f-max-stake" type="number" min="1" step="1" placeholder="Sem limite">
+              </div>
+              <div class="field">
+                <label for="f-max-win">Ganho máximo por pessoa (pontos, opcional)</label>
+                <input id="f-max-win" type="number" min="1" step="1" placeholder="Sem limite">
+                <span class="hint" id="f-max-win-hint">Teto do lucro líquido de quem acertar. Em branco, o prêmio é só aposta × odd.</span>
+              </div>
+            </div>
+            <div class="field" id="f-notify-field">
+              <label class="aopt"><input type="checkbox" id="f-notify" checked><span>Notificar os inscritos ao publicar esta enquete</span></label>
+              <span class="hint" id="f-notify-hint">Desmarque para publicar sem avisar ninguém.</span>
+            </div>
+            <p class="error" id="form-error" role="alert"></p>
+            <div class="actions">
+              <button class="btn" id="form-submit" type="submit">Publicar enquete</button>
+              <button class="btn ghost" id="form-cancel" type="button" hidden>Cancelar edição</button>
+            </div>
+          </form>
+        </section>
+      </div>
+
+      <div id="apane-polls" role="tabpanel" aria-labelledby="atab-polls">
+        <div class="list-head">
+          <h2 class="list-title" id="list-title">Enquetes</h2>
+          <div class="actions" data-need="ranking">
+            <button class="btn ghost small" id="reset-weekly" type="button">Zerar semanal</button>
+            <button class="btn danger small" id="reset-general" type="button">Zerar geral</button>
+          </div>
+        </div>
+        <div class="subtabs admin-subtabs" id="topic-tabs" role="tablist" aria-label="Tópicos das enquetes"></div>
+        <div id="poll-list" class="alist"></div>
+
+        <details class="panel narrow-md" id="topics-panel" data-need="topics">
+          <summary>⚙️ Gerenciar tópicos</summary>
+          <p class="hint">Os tópicos viram as divisórias da página principal (ex.: Geral, Casa). Ao criar uma enquete você escolhe o tópico; dá para mudar depois no botão Mover. Só dá para apagar um tópico vazio.</p>
+          <div id="topic-list" class="alist"></div>
+          <form id="topic-form">
+            <div class="field">
+              <label for="topic-name">Novo tópico</label>
+              <input id="topic-name" maxlength="30" placeholder="Ex.: Aposta da casa" required>
+            </div>
+            <p class="error" id="topic-error" role="alert"></p>
+            <button class="btn small" type="submit">Adicionar tópico</button>
+          </form>
+        </details>
+      </div>
+
+      <div id="apane-house" data-need="house" role="tabpanel" aria-labelledby="atab-house" hidden>
+      <section class="panel" id="house-panel">
+        <h2>🏠 Contas da casa</h2>
+        <p class="hint">Quando nenhuma opção bate, resolva a enquete como "🏠 A casa ganha" e escolha pra qual(is) dessas contas os pontos vão.</p>
+        <div class="admin-grid">
+          <form id="house-form">
+            <input type="hidden" id="house-id" value="">
+            <div class="field">
+              <label for="house-name">Nome da conta</label>
+              <input id="house-name" maxlength="40" placeholder="Ex.: A Casa" required>
+            </div>
+            <div class="field">
+              <label for="house-image">Imagem (link https, opcional)</label>
+              <input id="house-image" type="url" placeholder="https://...">
+            </div>
+            <p class="error" id="house-error" role="alert"></p>
+            <div class="actions">
+              <button class="btn" id="house-submit" type="submit">Adicionar conta</button>
+              <button class="btn ghost" id="house-cancel" type="button" hidden>Cancelar edição</button>
+            </div>
+          </form>
+          <div id="house-list" class="house-list"></div>
+        </div>
+      </section>
+      </div>
+
+      <div id="apane-streak" data-need="settings" role="tabpanel" aria-labelledby="atab-streak" hidden>
+      <section class="panel narrow-md" id="streak-panel">
+        <h2>Bônus de sequência</h2>
+        <form id="streak-form">
+          <div class="streak-row">
+            <div class="field">
+              <label for="s-every">A cada quantos acertos seguidos</label>
+              <input id="s-every" type="number" min="0" max="50" step="1" value="0">
+            </div>
+            <div class="field">
+              <label for="s-bonus">Pontos de bônus</label>
+              <input id="s-bonus" type="number" min="0" max="1000" step="1" value="0">
+            </div>
+          </div>
+          <p class="hint">Use 0 para desativar. Só contam as enquetes em que a pessoa votou, e um erro zera a sequência. A regra vale para todo o ranking e é recalculada na hora.</p>
+          <p class="error" id="streak-error" role="alert"></p>
+          <button class="btn" type="submit">Salvar bônus</button>
+        </form>
+      </section>
+      </div>
+
+      <div id="apane-ach" data-need="achievements" role="tabpanel" aria-labelledby="atab-ach" hidden>
+      <section class="panel" id="ach-panel">
+        <h2>Conquistas</h2>
+        <p class="hint"></p>
+        <div class="admin-grid">
+          <form id="ach-form">
+            <input type="hidden" id="ach-id" value="">
+            <div class="field">
+              <label for="ach-label">Nome</label>
+              <input id="ach-label" maxlength="40" placeholder="Ex.: Lendário" required>
+            </div>
+            <div class="streak-row">
+              <div class="field">
+                <label for="ach-type">Tipo</label>
+                <select id="ach-type">
+                  <option value="points">Total de pontos</option>
+                  <option value="streak">Sequência de acertos</option>
+                  <option value="titles">Títulos semanais (campeão da semana)</option>
+                  <option value="misses">Total de erros (negativa)</option>
+                  <option value="missstreak">Sequência de erros (negativa)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="ach-threshold">Meta</label>
+                <input id="ach-threshold" type="number" min="1" max="100000" step="1" value="50" required>
+              </div>
+            </div>
+            <div class="streak-row">
+              <div class="field">
+                <label for="ach-emoji">Emoji</label>
+                <input id="ach-emoji" maxlength="8" placeholder="🏆">
+              </div>
+              <div class="field">
+                <label for="ach-image">Imagem (link https, opcional)</label>
+                <input id="ach-image" type="url" placeholder="https://...">
+              </div>
+            </div>
+            <span class="hint">Sem imagem, mostra o emoji. Com imagem, ela substitui o emoji no ranking e no perfil.</span>
+            <p class="error" id="ach-error" role="alert"></p>
+            <div class="actions">
+              <button class="btn" id="ach-submit" type="submit">Adicionar nível</button>
+              <button class="btn ghost" id="ach-cancel" type="button" hidden>Cancelar edição</button>
+            </div>
+          </form>
+          <div id="ach-list" class="ach-admin-list"></div>
+        </div>
+      </section>
+      </div>
+
+      <div id="apane-prizes" data-need="prizes" role="tabpanel" aria-labelledby="atab-prizes" hidden>
+      <section class="panel" id="prize-panel">
+        <h2>Prêmios</h2>
+        <p class="hint">Cada prêmio tem um só dono: a primeira pessoa a chegar nos pontos do ranking geral leva, e quem chegar depois não ganha.</p>
+        <label class="aopt"><input type="checkbox" id="notify-prize"><span>Avisar os inscritos quando alguém conquistar um prêmio</span></label>
+        <span class="hint" id="notify-prize-hint">A notificação diz o nome de quem conquistou e o nome do prêmio.</span>
+        <div class="admin-grid">
+          <form id="prize-form">
+            <div class="field">
+              <label for="prize-name">Nome do prêmio</label>
+              <input id="prize-name" maxlength="40" placeholder="Ex.: Rei do Bolão" required>
+            </div>
+            <div class="field">
+              <label for="prize-desc">Descrição (aparece no site, opcional)</label>
+              <textarea id="prize-desc" rows="3" maxlength="300" placeholder="O que é esse prêmio, como ganhar..."></textarea>
+            </div>
+            <div class="field">
+              <label for="prize-points">Pontos para conquistar</label>
+              <input id="prize-points" type="number" min="1" max="1000000" step="1" value="500" required>
+            </div>
+            <div class="streak-row">
+              <div class="field">
+                <label for="prize-emoji">Emoji</label>
+                <input id="prize-emoji" maxlength="8" placeholder="🏅">
+              </div>
+              <div class="field">
+                <label for="prize-image">Imagem (link https, opcional)</label>
+                <input id="prize-image" type="url" placeholder="https://...">
+              </div>
+            </div>
+            <span class="hint">Sem imagem, mostra o emoji. Com imagem, ela substitui o emoji no ranking e no perfil.</span>
+            <p class="error" id="prize-error" role="alert"></p>
+            <div class="actions">
+              <button class="btn" id="prize-submit" type="submit">Criar prêmio</button>
+              <button class="btn ghost" id="prize-cancel" type="button" hidden>Cancelar edição</button>
+            </div>
+          </form>
+          <div id="prize-list" class="ach-admin-list"></div>
+        </div>
+      </section>
+      </div>
+
+      <div id="apane-users" data-need="users" role="tabpanel" aria-labelledby="atab-users" hidden>
+      <section class="panel" id="users-panel">
+        <h2>👥 Usuários</h2>
+        <p class="hint">Aqui altera os pontos dos meliantes e pune o malandro.</p>
+        <div class="field">
+          <label for="user-search">Buscar</label>
+          <input id="user-search" data-keep type="search" placeholder="Nome ou login" autocomplete="off">
+        </div>
+        <div id="user-list" class="ach-admin-list"></div>
+      </section>
+      </div>
+
+      <div id="apane-tests" role="tabpanel" aria-labelledby="atab-tests" hidden>
+      <section class="panel narrow-md" id="tests-panel">
+        <h2>🧪 Painel de testes</h2>
+        <form id="tests-lock" hidden>
+          <p class="hint" id="tests-lock-hint">Área protegida. Digite a senha da aba Testes (variável <code>TESTS_PASSWORD</code> no servidor). O acesso se fecha sozinho depois de 1 hora.</p>
+          <div class="field">
+            <label for="tests-pass">Senha da aba Testes</label>
+            <input id="tests-pass" type="password" autocomplete="off">
+          </div>
+          <p class="error" id="tests-lock-error" role="alert"></p>
+          <button class="btn" type="submit">Entrar</button>
+        </form>
+        <div id="tests-body" hidden>
+        <p class="hint">Crie participantes fictícios para testar votos, apostas, odds e ranking sozinho. Eles aparecem no ranking com 🧪, mas não ganham prêmio único nem entram no pódio semanal. Use “Apagar contas de teste” no fim: some tudo deles (votos, pontos, emblemas).</p>
+        <div class="field">
+          <label for="test-count">Criar contas de teste</label>
+          <div class="actions">
+            <input id="test-count" type="number" min="1" max="20" value="5" style="max-width:6rem" aria-label="Quantidade">
+            <input id="test-start" type="number" min="0" max="100000" value="100" style="max-width:7rem" aria-label="Pontos iniciais">
+            <button class="btn" id="test-create" type="button">Criar</button>
+          </div>
+          <span class="hint">Quantidade (até 20) e pontos iniciais de cada conta.</span>
+        </div>
+        <div id="test-list" class="alist"></div>
+        <h3>Votar / apostar pelas contas de teste</h3>
+        <div class="field"><label for="test-poll">Enquete (só abertas e visíveis)</label><select id="test-poll"></select></div>
+        <div class="field"><label for="test-option">Opção</label><select id="test-option"></select></div>
+        <div class="field"><label for="test-account">Conta</label><select id="test-account"></select></div>
+        <div class="field" id="test-stake-field"><label for="test-stake">Pontos da aposta (enquete com odd)</label><input id="test-stake" type="number" min="1" step="1" value="10"></div>
+        <div class="actions">
+          <button class="btn" id="test-vote" type="button">Votar com esta conta</button>
+          <button class="btn ghost" id="test-random" type="button">Todas as contas votam aleatório</button>
+        </div>
+        <p class="error" id="test-error" role="alert"></p>
+        <div class="actions">
+          <button class="btn ghost" id="test-clear" type="button">Apagar contas de teste</button>
+          <button class="btn ghost" id="tests-relock" type="button">Trancar aba</button>
+        </div>
+        </div>
+      </section>
+      </div>
+
+      <div id="apane-admins" role="tabpanel" aria-labelledby="atab-admins" hidden>
+      <section class="panel narrow-md">
+        <h2>🔑 Admins e níveis de acesso</h2>
+        <p class="hint">Você é o dono (entra só com a senha do servidor) e tem acesso a tudo. Cada admin entra com nome + senha e só faz o que estiver marcado aqui. Mudar as permissões vale na hora, sem ele precisar sair.</p>
+        <div id="admin-list" class="alist"></div>
+        <form id="admin-form">
+          <h3 id="admin-form-title">Novo admin</h3>
+          <div class="field"><label for="adm-name">Nome (usado para entrar)</label><input id="adm-name" maxlength="30" required autocomplete="off"></div>
+          <div class="field"><label for="adm-pass" id="adm-pass-label">Senha (mínimo 8 caracteres)</label><input id="adm-pass" type="password" autocomplete="new-password"></div>
+          <div class="field"><label>Modelos rápidos</label><div class="actions" id="adm-presets"></div></div>
+          <div id="adm-perms"></div>
+          <p class="error" id="adm-error" role="alert"></p>
+          <div class="actions">
+            <button class="btn" type="submit" id="adm-save">Criar admin</button>
+            <button class="btn ghost" type="button" id="adm-cancel" hidden>Cancelar</button>
+          </div>
+        </form>
+      </section>
+      </div>
+
+      <div id="apane-log" role="tabpanel" aria-labelledby="atab-log" hidden>
+      <section class="panel narrow-md">
+        <h2>📜 Histórico de ações</h2>
+        <p class="hint">Quem fez o quê no painel (os 6 meses mais recentes). Só o dono vê esta aba. Senhas nunca são registradas.</p>
+        <div class="field">
+          <label for="log-filter">Filtrar por admin</label>
+          <select id="log-filter"><option value="">Todos</option></select>
+        </div>
+        <div id="log-list" class="alist"></div>
+        <div class="actions"><button class="btn ghost" id="log-more" type="button" hidden>Carregar mais</button></div>
+      </section>
+      </div>
+
+      <div id="apane-hall" data-need="ranking" role="tabpanel" aria-labelledby="atab-hall" hidden>
+      <section class="panel narrow-md" id="hall-panel">
+        <h2>hall da fama</h2>
+        <p class="hint">O pódio (1º ao 3º) de cada semana é gravado quando você clica em Zerar semanal ou Zerar geral.</p>
+        <label class="aopt"><input type="checkbox" id="hall-visible"><span>Mostrar o Hall da fama para os participantes</span></label>
+        <span class="hint">Desligado, a aba some do ranking e o hall some do perfil. Nada é apagado, e as conquistas de título continuam funcionando (use Ocultar na aba Conquistas se quiser esconder também).</span>
+        <div id="hall-list" class="alist"></div>
+      </section>
+      </div>
+
+      <div id="apane-backup" role="tabpanel" aria-labelledby="atab-backup" hidden>
+      <section class="panel narrow-md">
+        <h2>Backup dos dados</h2>
+        <p>Apenas Backup!</p>
+        <div class="actions">
+          <button class="btn ghost" id="backup" type="button">Baixar backup</button>
+        </div>
+      </section>
+      </div>
+    </div>
+  </main>
+
+  <dialog id="adj-dialog" aria-labelledby="adj-title">
+    <div class="dlg">
+      <h2 id="adj-title">Pontos</h2>
+      <p class="poll-name" id="adj-name"></p>
+      <p id="adj-current" class="hint"></p>
+      <div class="field">
+        <label for="adj-amount">Quantos pontos?</label>
+        <input id="adj-amount" type="number" min="1" max="100000" step="1" inputmode="numeric" placeholder="Ex.: 10">
+      </div>
+      <div class="field">
+        <label for="adj-note">Motivo (opcional)</label>
+        <input id="adj-note" maxlength="120" placeholder="Ex.: bônus do sorteio">
+      </div>
+      <p class="error" id="adj-error" role="alert"></p>
+      <div class="actions">
+        <button class="btn" id="adj-add" type="button">➕ Somar</button>
+        <button class="btn danger" id="adj-sub" type="button">➖ Subtrair</button>
+      </div>
+      <h3 class="section-title">Últimos ajustes</h3>
+      <div id="adj-list" class="alist"></div>
+      <button class="btn ghost" id="adj-close" type="button">Fechar</button>
+    </div>
+  </dialog>
+
+  <dialog id="topic-dialog" aria-labelledby="topic-dlg-title">
+    <div class="dlg">
+      <h2 id="topic-dlg-title">Em qual tópico?</h2>
+      <p class="poll-name" id="topic-dlg-name"></p>
+      <div class="choices" id="topic-dlg-choices"></div>
+      <button class="btn ghost" id="topic-dlg-cancel" type="button">Cancelar</button>
+    </div>
+  </dialog>
+
+  <dialog id="reopen-dialog" aria-labelledby="reopen-title">
+    <div class="dlg">
+      <h2 id="reopen-title">Reabrir votação</h2>
+      <p class="poll-name" id="reopen-name"></p>
+      <p id="reopen-desc">Esta enquete já tem resposta e soma pontos no ranking. O que fazer com esses pontos?</p>
+      <div class="choices">
+        <button class="btn" type="button" data-choice="keep">Manter os pontos</button>
+        <p class="hint" id="reopen-hint-keep">Os pontos continuam no ranking e os votos desta enquete são limpos, para valer como uma nova rodada.</p>
+        <button class="btn danger" type="button" data-choice="zero">Zerar os pontos desta enquete</button>
+        <p class="hint" id="reopen-hint-zero">Os pontos dela saem do ranking. Os votos são mantidos e os participantes podem trocá-los.</p>
+      </div>
+      <button class="btn ghost" id="reopen-cancel" type="button">Cancelar</button>
+    </div>
+  </dialog>
+
+  <dialog id="house-win-dialog" aria-labelledby="house-win-title">
+    <div class="dlg">
+      <h2 id="house-win-title">🏠 A casa ganha</h2>
+      <p class="poll-name" id="house-win-name"></p>
+      <p>Nenhuma opção bateu. Escolha pra quais contas da casa os pontos vão:</p>
+      <form id="house-win-form">
+        <div id="house-win-options" class="house-win-options"></div>
+        <p class="error" id="house-win-error" role="alert"></p>
+        <div class="actions">
+          <button class="btn" type="submit">Confirmar</button>
+          <button class="btn ghost" id="house-win-cancel" type="button">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="house-lose-dialog" aria-labelledby="house-lose-title">
+    <div class="dlg">
+      <h2 id="house-lose-title">🏠 Qual casa erra?</h2>
+      <p class="poll-name" id="house-lose-name"></p>
+      <p>Marque as contas da casa que erram esta enquete: elas perdem a sequência e o erro entra no histórico. Contas desmarcadas não participam.</p>
+      <form id="house-lose-form">
+        <div id="house-lose-options" class="house-win-options"></div>
+        <div class="actions">
+          <button class="btn" type="submit">Confirmar resposta</button>
+          <button class="btn ghost" id="house-lose-cancel" type="button">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="%ADMIN_PATH%/admin.js"></script>
+</body>
+</html>
