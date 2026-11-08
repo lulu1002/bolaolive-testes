@@ -272,6 +272,19 @@ create table if not exists sessions (
 );
 create index if not exists sessions_expires_idx on sessions(expires_at);
 
+-- Enquetes com odd: o participante aposta pontos do ranking numa opção. Quem
+-- acerta recebe a aposta multiplicada pela odd (total de apostadores / apostadores
+-- na opção certa), então opção pouco escolhida paga mais. Quem erra perde a aposta.
+alter table polls add column if not exists odds boolean not null default false;
+alter table votes add column if not exists stake integer;
+-- Ganho líquido guardado de rodadas antigas de enquetes com odd (pode ser negativo).
+-- Nulo = rodada normal (vale 'points' se acertou, 0 se errou).
+alter table awards add column if not exists gain integer;
+-- Contas de teste do painel admin (aba Testes): participantes fictícios apagáveis de uma vez.
+alter table users add column if not exists is_test boolean not null default false;
+-- Chave geral das apostas: nasce desligada; o admin liga em /admin.
+insert into settings (key, value) values ('odds_enabled', '0') on conflict (key) do nothing;
+
 -- O Supabase expõe tabelas do schema "public" pela API REST (chave anon).
 -- Ligar o RLS sem criar políticas bloqueia esse acesso; o servidor usa a
 -- connection string do Postgres, que não é afetada.

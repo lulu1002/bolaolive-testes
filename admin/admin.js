@@ -2,7 +2,7 @@
   'use strict';
 
   const $ = (sel, root = document) => root.querySelector(sel);
-  const state = { notifyPrize: true, prizes: [], prizeEditing: null, adminUsers: [], polls: [], topics: [], topicTab: null, users: 0, editing: null, mode: 'replace', streak: { every: 0, bonus: 0 }, notify: true, notifyResult: true, notifyClosing: true, hallVisible: true, hall: [], pushEnabled: true, house: [], houseEditing: null, achievements: [], achEditing: null };
+  const state = { notifyPrize: true, prizes: [], prizeEditing: null, adminUsers: [], polls: [], topics: [], topicTab: null, users: 0, editing: null, mode: 'replace', streak: { every: 0, bonus: 0 }, notify: true, notifyResult: true, notifyClosing: true, hallVisible: true, oddsEnabled: false, hall: [], pushEnabled: true, house: [], houseEditing: null, achievements: [], achEditing: null };
 
   /* ---------- Utilidades ---------- */
   function h(tag, attrs = {}, ...children) {
@@ -77,7 +77,7 @@
     $('#admin-pass').focus();
   }
 
-  const ADMIN_TABS = ['create', 'polls', 'house', 'streak', 'ach', 'prizes', 'hall', 'users', 'backup'];
+  const ADMIN_TABS = ['create', 'polls', 'house', 'streak', 'ach', 'prizes', 'hall', 'users', 'tests', 'backup'];
 
   function setAdminTab(tab) {
     if (!ADMIN_TABS.includes(tab)) tab = 'polls';
@@ -89,6 +89,7 @@
     // Estas abas carregam só quando abertas (a lista de usuários é a mais pesada)
     if (tab === 'prizes') loadPrizes();
     if (tab === 'users') loadUsers();
+    if (tab === 'tests') loadTests();
   }
   ADMIN_TABS.forEach((t) => $(`#atab-${t}`).addEventListener('click', () => setAdminTab(t)));
 
@@ -130,7 +131,9 @@
       state.notifyResult = data.notifyResult;
       state.notifyClosing = data.notifyClosing;
       state.hallVisible = data.hallVisible;
+      state.oddsEnabled = data.oddsEnabled;
       state.pushEnabled = data.pushEnabled;
+      renderOdds();
       renderMode();
       renderNotify();
       renderStreak();
@@ -168,7 +171,7 @@
       h('span', { class: 'count' }, `${o.voters.length} ${o.voters.length === 1 ? 'voto' : 'votos'}`)));
 
     const meta = [
-      `${p.points} ${p.points === 1 ? 'ponto' : 'pontos'} por acerto`,
+      p.odds ? `🎲 odd · ${p.pool} pts apostados` : `${p.points} ${p.points === 1 ? 'ponto' : 'pontos'} por acerto`,
       p.closesAt ? `encerra em ${fmtDate(p.closesAt)}` : 'sem prazo',
       `${p.totalVotes} ${p.totalVotes === 1 ? 'voto' : 'votos'}`,
     ].join(', ');
@@ -177,6 +180,7 @@
       h('div', { class: 'apoll-head' }, h('h3', {}, p.title),
         h('span', { class: 'pills' },
           p.house ? h('span', { class: 'pill' }, '🏠 Casa') : null,
+          p.odds ? h('span', { class: 'pill' }, '🎲 Odd') : null,
           p.visible ? null : h('span', { class: 'pill' }, 'Fora da página'),
           h('span', { class: `pill ${p.status}` }, statusText(p)))),
       h('p', { class: 'meta' }, meta),
@@ -184,7 +188,9 @@
       p.houseWon
         ? h('p', { class: 'result house' }, `🏠 A casa ganhou: nenhuma opção bateu. +${p.points} pts pra cada conta da casa.`)
         : correct
-          ? h('p', { class: 'result' }, `Resposta certa: ${correct.text}. ${p.hits} de ${p.totalVotes} acertaram (+${p.points} pts cada).`)
+          ? h('p', { class: 'result' }, p.odds
+            ? `Resposta certa: ${correct.text}. ${p.hits} de ${p.totalVotes} acertaram (odd ${(p.hits ? p.totalVotes / p.hits : 0).toFixed(2)}x).`
+            : `Resposta certa: ${correct.text}. ${p.hits} de ${p.totalVotes} acertaram (+${p.points} pts cada).`)
           : null,
       h('fieldset', {}, h('legend', {}, 'Resposta certa'), options),
       h('details', { class: 'voters' },
@@ -413,6 +419,7 @@
     $('#poll-form').reset();
     $('#f-points').value = 10;
     $('#f-house').checked = false;
+    $('#f-odds').checked = false;
     $('#f-options').disabled = false;
     $('#f-options-hint').textContent = 'De 1 a 10 opções, uma por linha.';
     $('#form-title').textContent = 'Nova enquete';
@@ -421,6 +428,7 @@
     $('#form-error').textContent = '';
     $('#f-notify-field').hidden = false;
     renderNotify();
+    renderOdds();
   }
 
   function startEdit(p) {
@@ -433,12 +441,14 @@
     $('#f-options-hint').textContent = 'As opções não podem ser alteradas depois de publicar.';
     $('#f-points').value = p.points;
     $('#f-house').checked = Boolean(p.house);
+    $('#f-odds').checked = Boolean(p.odds);
     $('#f-closes').value = toLocalInput(p.closesAt);
     $('#f-notify-field').hidden = true; // editar não envia notificação
     $('#form-title').textContent = 'Editar enquete';
     $('#form-submit').textContent = 'Salvar alterações';
     $('#form-cancel').hidden = false;
     $('#form-error').textContent = '';
+    renderOdds();
     $('#form-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
     $('#f-title').focus({ preventScroll: true });
   }
@@ -479,6 +489,7 @@
       points: $('#f-points').value,
       closesAt: closes ? new Date(closes).toISOString() : null,
       house: $('#f-house').checked,
+      odds: $('#f-odds').checked,
     };
     const editing = state.editing;
     if (editing) {
@@ -805,9 +816,122 @@
       }
     });
   }
+  function renderOdds() {
+    $('#odds-global').checked = state.oddsEnabled;
+    // sem a chave geral, só dá pra criar enquete com odd depois de ligar (a caixa fica travada, mas marcada se a enquete já é odd)
+    $('#f-odds').disabled = !state.oddsEnabled && !$('#f-odds').checked;
+  }
+  bindFlag('#odds-global', 'odds', 'oddsEnabled', 'Enquetes com odd ligadas', 'Enquetes com odd desligadas', renderOdds);
   bindFlag('#notify-global', 'notify', 'notify', 'Notificações de enquete nova ligadas', 'Notificações de enquete nova desligadas', renderNotify);
   bindFlag('#notify-result', 'notifyResult', 'notifyResult', 'Aviso de resultado ligado', 'Aviso de resultado desligado', renderNotify);
   bindFlag('#notify-closing', 'notifyClosing', 'notifyClosing', 'Lembrete de enquete fechando ligado', 'Lembrete de enquete fechando desligado', renderNotify);
+
+  /* ---------- Painel de testes ---------- */
+  const tests = { users: [] };
+
+  function openPolls() {
+    return state.polls.filter((p) => p.status === 'open' && p.visible);
+  }
+
+  function fillTestSelects() {
+    const polls = openPolls();
+    const pollSel = $('#test-poll');
+    const keep = pollSel.value;
+    pollSel.replaceChildren(...polls.map((p) => h('option', { value: p.id }, `${p.odds ? '🎲 ' : ''}${p.title}`)));
+    if (polls.some((p) => p.id === keep)) pollSel.value = keep;
+    const p = polls.find((x) => x.id === pollSel.value);
+    $('#test-option').replaceChildren(...(p ? p.options.map((o) => h('option', { value: o.id }, o.text)) : []));
+    $('#test-stake-field').hidden = !(p && p.odds);
+    const accSel = $('#test-account');
+    const keepAcc = accSel.value;
+    accSel.replaceChildren(...tests.users.map((u) => h('option', { value: u.id }, `${u.name} (${u.points} pts)`)));
+    if (tests.users.some((u) => u.id === keepAcc)) accSel.value = keepAcc;
+  }
+
+  function renderTests() {
+    const box = $('#test-list');
+    box.replaceChildren();
+    if (!tests.users.length) box.append(h('p', { class: 'hint' }, 'Nenhuma conta de teste ainda.'));
+    else {
+      box.append(...tests.users.map((u) => h('div', { class: 'house-row' },
+        h('span', {}, h('b', {}, u.name), ` · ${u.points} pts${u.locked ? ` (${u.locked} apostados)` : ''}`),
+        h('button', { class: 'btn ghost small', type: 'button', onclick: () => testAct(() => api(`/api/admin/test-users/${u.id}/points`, { method: 'POST', body: { delta: 100 } }), '+100 pontos') }, '+100'),
+        h('button', { class: 'btn ghost small', type: 'button', onclick: () => testAct(() => api(`/api/admin/test-users/${u.id}/points`, { method: 'POST', body: { delta: -100 } }), '−100 pontos') }, '−100'))));
+    }
+    fillTestSelects();
+  }
+
+  function showTestsLock(configured = true) {
+    $('#tests-lock').hidden = false;
+    $('#tests-body').hidden = true;
+    $('#tests-lock-error').textContent = configured ? '' : 'TESTS_PASSWORD não está configurada no servidor: a aba fica trancada.';
+  }
+
+  async function loadTests() {
+    try {
+      const st = await api('/api/admin/tests/status');
+      if (!st.unlocked) { showTestsLock(st.configured); return; }
+      $('#tests-lock').hidden = true;
+      $('#tests-body').hidden = false;
+      const data = await api('/api/admin/test-users');
+      tests.users = data.users;
+      renderTests();
+    } catch (e) {
+      if (e.status === 403) showTestsLock();
+      else handleError(e);
+    }
+  }
+
+  $('#tests-lock').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('#tests-lock-error').textContent = '';
+    try {
+      await api('/api/admin/tests/unlock', { method: 'POST', body: { password: $('#tests-pass').value } });
+      $('#tests-pass').value = '';
+      loadTests();
+    } catch (err) {
+      if (err.status === 401 && /admin/i.test(err.message)) handleError(err);
+      else $('#tests-lock-error').textContent = err.message;
+    }
+  });
+  $('#tests-relock').addEventListener('click', async () => {
+    try { await api('/api/admin/tests/lock', { method: 'POST' }); } catch (_) { /* segue */ }
+    showTestsLock();
+  });
+
+  async function testAct(request, okMessage) {
+    $('#test-error').textContent = '';
+    try {
+      const r = await request();
+      toast(typeof okMessage === 'function' ? okMessage(r) : okMessage);
+      await loadPolls();
+      await loadTests();
+    } catch (e) {
+      if (e.status === 401) handleError(e);
+      else if (e.status === 403) showTestsLock();
+      else $('#test-error').textContent = e.message;
+    }
+  }
+
+  $('#test-poll').addEventListener('change', fillTestSelects);
+  $('#test-create').addEventListener('click', () => testAct(
+    () => api('/api/admin/test-users', { method: 'POST', body: { count: Number($('#test-count').value), startPoints: Number($('#test-start').value) } }),
+    'Contas de teste criadas'));
+  $('#test-vote').addEventListener('click', () => {
+    const id = $('#test-account').value;
+    if (!id) { $('#test-error').textContent = 'Crie uma conta de teste primeiro.'; return; }
+    testAct(() => api(`/api/admin/test-users/${id}/vote`, {
+      method: 'POST',
+      body: { pollId: $('#test-poll').value, optionId: $('#test-option').value, stake: Number($('#test-stake').value) },
+    }), 'Voto registrado');
+  });
+  $('#test-random').addEventListener('click', () => testAct(
+    () => api('/api/admin/test-users/random-votes', { method: 'POST', body: { pollId: $('#test-poll').value } }),
+    (r) => `${r.done} votaram${r.skipped ? `, ${r.skipped} sem saldo` : ''}`));
+  $('#test-clear').addEventListener('click', () => {
+    if (!confirm('Apagar todas as contas de teste e tudo que elas votaram, apostaram ou ganharam?')) return;
+    testAct(() => api('/api/admin/test-users', { method: 'DELETE' }), (r) => `${r.removed} contas apagadas`);
+  });
 
   /* ---------- Hall da fama ---------- */
   const medal = { 1: '🥇', 2: '🥈', 3: '🥉' };

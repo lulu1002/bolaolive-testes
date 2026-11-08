@@ -7,6 +7,23 @@ Enquetes com palpites e ranking. O admin publica a enquete, os participantes ent
 - Stack: Node.js + Express + Postgres (Supabase), frontend em HTML/CSS/JS puro
 - No ranking aparece o nome e a foto da conta Twitch de cada participante
 
+## Enquetes com odd (apostas) — opcional
+
+No painel admin (aba Criar), ligue **Ativar enquetes com odd**. Depois, ao criar uma enquete, marque **Enquete com odd**.
+
+- O participante escolhe uma opção e aposta uma quantidade de pontos do **ranking geral** (saldo = total de pontos menos o que já está apostado em enquetes sem resultado). Pode trocar a aposta até a votação encerrar.
+- Odd = total de apostadores ÷ apostadores na opção. Quem acerta recebe `aposta × odd` (ganho líquido = isso − aposta); quem erra perde a aposta. Pouca gente na opção certa = prêmio alto; muita gente = prêmio baixo; todo mundo na mesma opção = devolve a aposta.
+- Se a casa ganhar ("ninguém acertou"), os apostadores perdem a aposta e as contas da casa escolhidas recebem os "Pontos por acerto" da enquete.
+- O ganho/perda entra no ranking geral e no semanal; reabrir ou apagar a enquete mantendo/zerando pontos funciona igual às enquetes normais.
+- Só dá para ligar/desligar a odd de uma enquete antes do primeiro voto. Com a chave geral desligada, não dá mais para apostar nem criar enquete com odd (apostas já feitas continuam valendo no resultado).
+- O banco é atualizado sozinho no deploy (colunas `polls.odds`, `votes.stake`, `awards.gain`).
+
+## Painel de testes
+
+Na aba **🧪 Testes** do admin você cria contas fictícias (com pontos iniciais), faz cada uma votar ou apostar, faz todas votarem aleatoriamente de uma vez e dá ±100 pontos. Elas aparecem no ranking com 🧪, não levam prêmio único nem entram no pódio, e **Apagar contas de teste** remove tudo delas. Evite zerar o ranking semanal com contas de teste ativas.
+
+A aba é protegida por uma segunda senha, a variável `TESTS_PASSWORD` (o Blueprint do Render gera uma; em dev o padrão é `teste123`). Sem ela em produção, a aba fica trancada. O acesso fecha sozinho após 1 hora, ou pelo botão “Trancar aba”.
+
 ## 1. Supabase (banco de dados)
 
 1. Crie um projeto em https://supabase.com.
@@ -88,7 +105,7 @@ No site, a barra de tópicos só aparece quando há enquetes em mais de um tópi
 
 ## Hall da fama
 
-Ao clicar em **Zerar semanal** (ou **Zerar geral**, que zera o semanal junto), o servidor grava o pódio da semana — 1º ao 3º lugar, com pontos e acertos — antes de mover a data de corte. Empatados dividem o lugar, contas da casa e quem não pontuou ficam de fora, e semana em que ninguém pontuou não grava nada. O histórico aparece na aba **Hall da fama** do ranking e no perfil de cada pessoa, e nenhum "zerar" apaga o hall. No painel admin (aba 🏆 Hall) dá para **mostrar/ocultar** o hall para os participantes e excluir uma semana gravada por engano. A conquista **Campeão semanal** (tipo "Títulos semanais", níveis 1, 3 e 5 por padrão, editáveis em Conquistas) conta as vezes em 1º lugar. O pódio só começa a ser gravado a partir do primeiro "Zerar" depois deste deploy.
+Ao clicar em **Zerar semanal** (ou **Zerar geral**, que zera o semanal junto), o servidor grava o pódio da semana — 1º ao 3º lugar, com pontos e acertos — antes de mover a data de corte. Empatados dividem o lugar, contas da casa também entram, só quem não pontuou fica de fora, e semana em que ninguém pontuou não grava nada. O histórico aparece na aba **Hall da fama** do ranking e no perfil de cada pessoa, e nenhum "zerar" apaga o hall. No painel admin (aba 🏆 Hall) dá para **mostrar/ocultar** o hall para os participantes e excluir uma semana gravada por engano. A conquista **Campeão semanal** (tipo "Títulos semanais", níveis 1, 3 e 5 por padrão, editáveis em Conquistas) conta as vezes em 1º lugar. O pódio só começa a ser gravado a partir do primeiro "Zerar" depois deste deploy.
 
 
 ## Prêmios únicos
