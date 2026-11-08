@@ -267,6 +267,12 @@ const GAIN_SQL = `case
     else -v.stake
   end`;
 
+// Trava de voto: ligada, quem já votou numa enquete não pode trocar nem refazer a aposta. Desligada por padrão.
+async function getLockVotes() {
+  const { rows } = await q("select value from settings where key = 'lock_votes'");
+  return Boolean(rows[0] && rows[0].value === '1');
+}
+
 async function getMode() {
   const { rows } = await q("select value from settings where key = 'mode'");
   return rows[0] && rows[0].value === 'accumulate' ? 'accumulate' : 'replace';
@@ -1069,7 +1075,7 @@ app.get('/api/polls', wrap(async (req, res) => {
   });
   // Saldo só é calculado quando há enquete com odd na página e a pessoa está logada
   const balance = u && polls.some((p) => p.odds) ? await availableBalance(u.id) : null;
-  res.json({ polls, topics: await fetchTopics(), oddsEnabled: await getOddsEnabled(), balance });
+  res.json({ polls, topics: await fetchTopics(), oddsEnabled: await getOddsEnabled(), lockVotes: await getLockVotes(), balance });
 }));
 
 /* Saldo para apostar = pontos do ranking geral − o que está apostado em enquetes ainda sem resultado */
@@ -1096,6 +1102,10 @@ async function castVote(pollId, userId, body) {
   if (pollStatus(poll) !== 'open') return { status: 409, error: 'A votação desta enquete já foi encerrada.' };
   const optionId = String(body?.optionId ?? '');
   if (!poll.options.some((o) => o.id === optionId && !o.isHouse)) return { status: 400, error: 'Opção inválida.' };
+  if (await getLockVotes()) {
+    const had = await q('select 1 from votes where poll_id = $1 and user_id = $2', [poll.id, userId]);
+    if (had.rowCount) return { status: 409, locked: true, error: 'Você já votou nesta enquete e não pode trocar o voto.' };
+  }
   if (poll.odds) {
     // Enquete com odd: o palpite vem junto com uma aposta em pontos do ranking
     if (!(await getOddsEnabled())) return { status: 409, error: 'As apostas estão desligadas no momento.' };
@@ -1222,6 +1232,7 @@ app.get('/api/admin/polls', requireAdmin, wrap(async (req, res) => {
     notifyClosing: await getFlag('notify_closing'),
     hallVisible: await getFlag('hall_visible'),
     oddsEnabled: await getOddsEnabled(),
+    lockVotes: await getLockVotes(),
     pushEnabled: PUSH_ENABLED,
   });
 }));
@@ -1903,7 +1914,7 @@ app.post('/api/admin/test-users/random-votes', requireTests, wrap(async (req, re
       body.stake = 1 + Math.floor(Math.random() * Math.min(free, 100));
     }
     const r = await castVote(poll.id, u.id, body);
-    if (r.error) { if (r.status === 409) return res.status(409).json({ error: r.error }); skipped.push(u.display_name); } else done += 1;
+    if (r.error) { if (r.status === 409 && !r.locked) return res.status(409).json({ error: r.error }); skipped.push(u.display_name); } else done += 1;
   }
   res.json({ ok: true, done, skipped: skipped.length });
 }));
@@ -1977,13 +1988,14 @@ app.post('/api/admin/settings', requireAdmin, wrap(async (req, res) => {
     hallVisible: 'hall_visible',
     notifyPrize: 'notify_prize',
     odds: 'odds_enabled',
+    lockVotes: 'lock_votes',
   };
   for (const [field, key] of Object.entries(flagFields)) {
     const v = req.body?.[field];
     if (v === undefined) continue;
     if (typeof v !== 'boolean') return res.status(400).json({ error: 'Valor inválido.' });
     entries.push([key, v ? '1' : '0']);
-    if (field === 'hallVisible' || field === 'odds') rankingChanged = true; // avisa as páginas abertas
+    if (field === 'hallVisible' || field === 'odds' || field === 'lockVotes') rankingChanged = true; // avisa as páginas abertas
   }
 
   if (mode !== undefined) {

@@ -10,6 +10,7 @@
     topics: [],
     pollTopic: null,
     oddsEnabled: false,
+    lockVotes: false,
     balance: null,
     bet: {}, // rascunho da aposta por enquete: { [pollId]: { optionId, stake } }
     pollsError: null,
@@ -231,6 +232,7 @@
       state.polls = data.polls;
       state.topics = data.topics || [];
       state.oddsEnabled = Boolean(data.oddsEnabled);
+      state.lockVotes = Boolean(data.lockVotes);
       state.balance = data.balance == null ? null : data.balance;
       state.pollsError = null;
     } catch (e) {
@@ -254,7 +256,7 @@
       }
       if (p.odds) return null; // o quadro de aposta já explica tudo
       return h('p', { class: 'note' },
-        p.myVote ? 'Palpite registrado. Você pode trocar até a votação encerrar.' : 'Toque em uma opção para dar seu palpite.');
+        p.myVote ? (state.lockVotes ? 'Palpite registrado. Não é possível trocar o voto.' : 'Palpite registrado. Você pode trocar até a votação encerrar.') : 'Toque em uma opção para dar seu palpite.');
     }
     if (!state.user) return null;
     if (!p.myVote) return h('p', { class: 'note' }, 'Você não votou nesta enquete.');
@@ -281,6 +283,7 @@
   function pickBet(p, optionId) {
     if (!state.user) { toast('Entre com a Twitch para apostar.'); return; }
     if (!state.oddsEnabled) { toast('As apostas estão desligadas no momento.', true); return; }
+    if (state.lockVotes && p.myVote) { toast('Você já apostou e não pode trocar.', true); return; }
     const prev = state.bet[p.id];
     state.bet[p.id] = { optionId, stake: prev ? prev.stake : (p.myStake || '') };
     renderPolls();
@@ -296,6 +299,8 @@
     ];
     if (!state.oddsEnabled) {
       lines.push(h('p', { class: 'note' }, 'As apostas estão desligadas no momento.'));
+    } else if (state.lockVotes && p.myVote) {
+      lines.push(h('p', { class: 'note' }, 'Aposta registrada. Não é possível trocar.'));
     } else if (!draft) {
       lines.push(h('p', { class: 'note' }, p.myVote
         ? 'Toque em uma opção para trocar sua aposta.'
@@ -344,7 +349,7 @@
       class: cls,
       role: 'radio',
       'aria-checked': String(mine),
-      disabled: !isOpen,
+      disabled: !isOpen || (state.lockVotes && Boolean(p.myVote)),
       'data-key': `${p.id}:${o.id}`,
       onclick: () => (p.odds ? pickBet(p, o.id) : vote(p, o.id)),
     }, h('span', { class: 'box' }, xMark()), h('span', { class: 'opt-text' }, o.text));

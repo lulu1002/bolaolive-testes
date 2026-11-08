@@ -18,6 +18,10 @@ No painel admin (aba Criar), ligue **Ativar enquetes com odd**. Depois, ao criar
 - Só dá para ligar/desligar a odd de uma enquete antes do primeiro voto. Com a chave geral desligada, não dá mais para apostar nem criar enquete com odd (apostas já feitas continuam valendo no resultado).
 - O banco é atualizado sozinho no deploy (colunas `polls.odds`, `votes.stake`, `awards.gain`).
 
+## Trava de voto
+
+Na aba Criar do admin, a caixa **Não deixar o participante trocar o voto** (desligada por padrão) impede qualquer troca depois do primeiro voto ou aposta, em todas as enquetes.
+
 ## Painel de testes
 
 Na aba **🧪 Testes** do admin você cria contas fictícias (com pontos iniciais), faz cada uma votar ou apostar, faz todas votarem aleatoriamente de uma vez e dá ±100 pontos. Elas aparecem no ranking com 🧪, não levam prêmio único nem entram no pódio, e **Apagar contas de teste** remove tudo delas. Evite zerar o ranking semanal com contas de teste ativas.

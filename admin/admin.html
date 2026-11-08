@@ -62,6 +62,11 @@
             <span class="hint">Enquetes substituídas saem da página, mas continuam aqui no painel e valem pontos quando você define a resposta.</span>
           </fieldset>
           <fieldset class="modes">
+            <legend>Trava de voto</legend>
+            <label class="aopt"><input type="checkbox" id="lock-votes"><span>🔒 Não deixar o participante trocar o voto: votou, está votado</span></label>
+            <span class="hint">Vale para todas as enquetes (normais e com odd), inclusive as que já têm votos. Desligado, dá para trocar o voto até a votação encerrar.</span>
+          </fieldset>
+          <fieldset class="modes">
             <legend>Enquetes com odd (apostas)</legend>
             <label class="aopt"><input type="checkbox" id="odds-global"><span>🎲 Ativar enquetes com odd: os participantes apostam pontos do ranking</span></label>
             <span class="hint">Quem acerta recebe a aposta × odd, e a odd é (total de apostadores ÷ apostadores na opção). Pouca gente na opção certa = prêmio alto; muita gente = prêmio baixo. Quem erra perde a aposta. Desligada, não dá para criar enquete com odd nem apostar (apostas já feitas continuam valendo no resultado).</span>

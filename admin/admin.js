@@ -2,7 +2,7 @@
   'use strict';
 
   const $ = (sel, root = document) => root.querySelector(sel);
-  const state = { notifyPrize: true, prizes: [], prizeEditing: null, adminUsers: [], polls: [], topics: [], topicTab: null, users: 0, editing: null, mode: 'replace', streak: { every: 0, bonus: 0 }, notify: true, notifyResult: true, notifyClosing: true, hallVisible: true, oddsEnabled: false, hall: [], pushEnabled: true, house: [], houseEditing: null, achievements: [], achEditing: null };
+  const state = { notifyPrize: true, prizes: [], prizeEditing: null, adminUsers: [], polls: [], topics: [], topicTab: null, users: 0, editing: null, mode: 'replace', streak: { every: 0, bonus: 0 }, notify: true, notifyResult: true, notifyClosing: true, hallVisible: true, oddsEnabled: false, lockVotes: false, hall: [], pushEnabled: true, house: [], houseEditing: null, achievements: [], achEditing: null };
 
   /* ---------- Utilidades ---------- */
   function h(tag, attrs = {}, ...children) {
@@ -132,6 +132,8 @@
       state.notifyClosing = data.notifyClosing;
       state.hallVisible = data.hallVisible;
       state.oddsEnabled = data.oddsEnabled;
+      state.lockVotes = data.lockVotes;
+      $('#lock-votes').checked = state.lockVotes;
       state.pushEnabled = data.pushEnabled;
       renderOdds();
       renderMode();
@@ -821,6 +823,7 @@
     // sem a chave geral, só dá pra criar enquete com odd depois de ligar (a caixa fica travada, mas marcada se a enquete já é odd)
     $('#f-odds').disabled = !state.oddsEnabled && !$('#f-odds').checked;
   }
+  bindFlag('#lock-votes', 'lockVotes', 'lockVotes', 'Trava de voto ligada: não dá mais para trocar o voto', 'Trava de voto desligada', () => {});
   bindFlag('#odds-global', 'odds', 'oddsEnabled', 'Enquetes com odd ligadas', 'Enquetes com odd desligadas', renderOdds);
   bindFlag('#notify-global', 'notify', 'notify', 'Notificações de enquete nova ligadas', 'Notificações de enquete nova desligadas', renderNotify);
   bindFlag('#notify-result', 'notifyResult', 'notifyResult', 'Aviso de resultado ligado', 'Aviso de resultado desligado', renderNotify);
