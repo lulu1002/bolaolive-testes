@@ -253,6 +253,7 @@ function rowToPoll(r) {
     odds: Boolean(r.odds),
     poolOdds: Boolean(r.pool_odds),
     optionPoints: Boolean(r.option_points),
+    showOptionPoints: r.show_option_points !== false,
     cancelled: Boolean(r.cancelled),
     maxStake: r.max_stake,
     maxWin: r.max_win,
@@ -388,6 +389,7 @@ function publicPoll(p, votes, userId) {
     maxStake: p.odds ? p.maxStake : null,
     poolOdds: Boolean(p.poolOdds),
     optionPoints: Boolean(p.optionPoints),
+    optionPointsHidden: Boolean(p.optionPoints && !p.showOptionPoints && status !== 'resolved'),
     maxWin: p.odds || p.poolOdds ? p.maxWin : null,
     options: visibleOptions(p).map((o) => {
       const base = {
@@ -395,7 +397,8 @@ function publicPoll(p, votes, userId) {
         text: o.text,
         votes: showResults ? (p.odds ? countOn(o.id) : votes.filter((v) => v.option_id === o.id).length) : null,
       };
-      if (p.optionPoints) base.points = o.points ?? p.points;
+      // Pontos escondidos pelo admin só aparecem depois do resultado
+      if (p.optionPoints && (p.showOptionPoints || status === 'resolved')) base.points = o.points ?? p.points;
       if (p.poolOdds) {
         // Parte do prêmio que a pessoa levaria se votasse aqui e esta opção fosse a certa
         const on = votes.filter((v) => v.option_id === o.id).length - (mine && mine.option_id === o.id ? 1 : 0);
@@ -443,6 +446,7 @@ function adminPoll(p, votes) {
     odds: p.odds,
     poolOdds: p.poolOdds,
     optionPoints: p.optionPoints,
+    showOptionPoints: p.showOptionPoints,
     maxStake: p.maxStake,
     maxWin: p.maxWin,
     pool: p.odds ? votes.reduce((n, v) => n + (v.stake || 0), 0) : null,
@@ -826,6 +830,7 @@ function parsePollInput(body, requireOptions) {
   if (optionPoints && (odds || poolOdds)) return { error: 'Pontos por opção não combina com odd: escolha só um dos dois.' };
   const out = {
     title, description, points, closesAt, house: body?.house === true, odds, poolOdds, optionPoints,
+    showOptionPoints: body?.showOptionPoints !== false,
     maxStake: odds ? maxStake : null, maxWin: odds || poolOdds ? maxWin : null,
   };
   if (requireOptions) {
@@ -1563,7 +1568,7 @@ app.post('/api/admin/polls', requirePerm('polls_create'), wrap(async (req, res) 
         [topicId]
       );
     }
-    await c.query('insert into polls (id, title, description, points, closes_at, topic_id, house, odds, max_stake, max_win, pool_odds, option_points) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)', [
+    await c.query('insert into polls (id, title, description, points, closes_at, topic_id, house, odds, max_stake, max_win, pool_odds, option_points, show_option_points) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)', [
       id,
       input.title,
       input.description,
@@ -1576,6 +1581,7 @@ app.post('/api/admin/polls', requirePerm('polls_create'), wrap(async (req, res) 
       input.maxWin,
       input.poolOdds,
       input.optionPoints,
+      input.showOptionPoints,
     ]);
     for (const [i, o] of input.options.entries()) {
       await c.query('insert into poll_options (id, poll_id, label, position, points) values ($1, $2, $3, $4, $5)', [o.id, id, o.text, i, o.points]);
@@ -1602,7 +1608,7 @@ app.put('/api/admin/polls/:id', requirePerm('polls_edit', 'polls_odds'), wrap(as
     const [old] = await fetchPolls('where id = $1', [req.params.id]);
     const minute = (d) => (d ? Math.floor(new Date(d).getTime() / 60000) : null);
     const baseChanged = old.title !== input.title || (old.description || '') !== (input.description || '')
-      || old.points !== input.points || Boolean(old.house) !== input.house || minute(old.closesAt) !== minute(input.closesAt);
+      || old.points !== input.points || old.showOptionPoints !== input.showOptionPoints || Boolean(old.house) !== input.house || minute(old.closesAt) !== minute(input.closesAt);
     const oddsChanged = Boolean(old.odds) !== input.odds || Boolean(old.poolOdds) !== input.poolOdds || (old.maxStake || null) !== input.maxStake || (old.maxWin || null) !== input.maxWin;
     if (baseChanged && !can(req, 'polls_edit')) return res.status(403).json({ error: 'Seu nível de admin não permite editar título, descrição, pontos, prazo ou casa.' });
     if (oddsChanged && !can(req, 'polls_odds')) return res.status(403).json({ error: 'Seu nível de admin não permite mudar odd nem tetos de aposta.' });
@@ -1615,7 +1621,7 @@ app.put('/api/admin/polls/:id', requirePerm('polls_edit', 'polls_odds'), wrap(as
   }
   const r = await q(`update polls set title = $2, description = $3, points = $4,
       closing_notified = (closing_notified and closes_at is not distinct from $5::timestamptz), closes_at = $5,
-      house = $6, odds = $7, max_stake = $8, max_win = $9, pool_odds = $10
+      house = $6, odds = $7, max_stake = $8, max_win = $9, pool_odds = $10, show_option_points = $11
     where id = $1`, [
     req.params.id,
     input.title,
@@ -1627,6 +1633,7 @@ app.put('/api/admin/polls/:id', requirePerm('polls_edit', 'polls_odds'), wrap(as
     input.maxStake,
     input.maxWin,
     input.poolOdds,
+    input.showOptionPoints,
   ]);
   if (!r.rowCount) return notFound(res);
   res.json({ ok: true });

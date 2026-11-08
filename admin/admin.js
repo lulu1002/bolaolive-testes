@@ -478,6 +478,7 @@
   // "Pontos por opção" e "odd" são excludentes; ao editar, o tipo já não pode mudar
   function syncOptionMode() {
     const op = $('#f-opt-points').checked;
+    $('#f-show-opt-points-field').hidden = !op;
     if (op) $('#f-odds').checked = false;
     $('#f-odds').disabled = op;
     $('#f-opt-points').disabled = Boolean(state.editing) || $('#f-odds').checked;
@@ -489,7 +490,7 @@
 
   function applyFormPerms() {
     const lockBase = Boolean(state.editing) && !can('polls_edit');
-    ['#f-title', '#f-desc', '#f-points', '#f-closes', '#f-house'].forEach((s) => { $(s).disabled = lockBase; });
+    ['#f-title', '#f-desc', '#f-points', '#f-closes', '#f-house', '#f-show-opt-points'].forEach((s) => { $(s).disabled = lockBase; });
     $('#f-odds').closest('.field').hidden = !can('polls_odds');
     $('#f-opt-points').closest('.field').hidden = !can('polls_odds');
     syncOptionMode();
@@ -506,6 +507,7 @@
     $('#f-house').checked = false;
     $('#f-odds').checked = false;
     $('#f-opt-points').checked = false;
+    $('#f-show-opt-points').checked = true;
     $('#f-odds-kind').value = 'stake';
     $('#f-max-stake').value = '';
     $('#f-max-win').value = '';
@@ -532,6 +534,7 @@
     $('#f-house').checked = Boolean(p.house);
     $('#f-odds').checked = Boolean(p.odds || p.poolOdds);
     $('#f-opt-points').checked = Boolean(p.optionPoints);
+    $('#f-show-opt-points').checked = p.showOptionPoints !== false;
     $('#f-odds-kind').value = p.poolOdds ? 'pool' : 'stake';
     $('#f-max-stake').value = p.maxStake || '';
     $('#f-max-win').value = p.maxWin || '';
@@ -583,6 +586,7 @@
       closesAt: closes ? new Date(closes).toISOString() : null,
       house: $('#f-house').checked,
       optionPoints: $('#f-opt-points').checked,
+      showOptionPoints: $('#f-show-opt-points').checked,
       odds: $('#f-odds').checked && $('#f-odds-kind').value === 'stake',
       poolOdds: $('#f-odds').checked && $('#f-odds-kind').value === 'pool',
       maxStake: $('#f-max-stake').value,
