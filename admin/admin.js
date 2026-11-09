@@ -74,6 +74,7 @@
     $('#login').hidden = false;
     $('#panel').hidden = true;
     $('#logout').hidden = true;
+    $('#whoami').hidden = true;
     $('#admin-pass').focus();
   }
 
@@ -472,11 +473,11 @@
       : opt ? ($('#f-sum-points').checked ? 'Pontos da enquete (somados aos de cada opção)' : 'Pontos da casa (só valem se ninguém acertar)')
       : 'Pontos por acerto';
     $('#f-odds-kind-hint').textContent = pool
-      ? 'Os pontos acima viram um prêmio único: cada acertador leva o prêmio ÷ nº de acertadores (arredondado para baixo). Pouca gente na certa = parte grande; muita gente = parte pequena. Ninguém perde pontos.'
-      : 'Cada participante aposta pontos do próprio ranking. Quem acerta recebe aposta × odd (total de apostadores ÷ apostadores na opção); quem erra perde a aposta. Os “Pontos por acerto” só valem se a casa ganhar.';
+      ? 'Os pontos viram um prêmio único: cada acertador leva prêmio ÷ nº de acertadores (para baixo). Ninguém perde pontos.'
+      : 'Aposta com pontos do ranking: acerto = aposta × odd; erro = perde a aposta. Se a casa ganhar, valem os “Pontos por acerto”.';
     $('#f-max-win-hint').textContent = pool
-      ? 'Teto da parte de cada acertador. Em branco, sem teto.'
-      : 'Teto do lucro líquido de quem acertar. Em branco, o prêmio é só aposta × odd.';
+      ? 'Teto da parte de cada acertador. Vazio = sem teto.'
+      : 'Teto do lucro de quem acertar. Vazio = sem teto.';
   }
   // Mostra só o que o nível do admin permite mexer: ao editar, os campos básicos pedem "editar enquetes" e a odd pede "definir odd"
   // "Pontos por opção" e "odd" são excludentes; ao editar, o tipo já não pode mudar
@@ -1044,31 +1045,31 @@
     const box = $('#bot-status');
     const rows = [];
     if (!d.twitchConfigured) {
-      rows.push(h('p', { class: 'error' }, 'O servidor está sem as credenciais do bot (BOT_TWITCH_CLIENT_ID e BOT_TWITCH_CLIENT_SECRET): o bot não consegue conectar.'));
+      rows.push(h('p', { class: 'error' }, 'Faltam BOT_TWITCH_CLIENT_ID e BOT_TWITCH_CLIENT_SECRET no servidor.'));
     }
     rows.push(h('div', { class: 'house-row' },
       h('span', { class: 'nm' }, d.connected ? h('span', {}, '✅ Conta do bot conectada: ', h('b', {}, d.botLogin)) : '⚠️ Nenhuma conta de bot conectada'),
       can('bot') && d.twitchConfigured ? h('a', { class: 'btn ghost small', href: '/api/admin/bot/connect' }, d.connected ? 'Trocar conta' : 'Conectar conta do bot') : null,
       can('bot') && d.connected ? h('button', { class: 'btn danger small', type: 'button', onclick: disconnectBot }, 'Desconectar') : null));
     rows.push(h('p', { class: 'hint' }, d.ownApp
-      ? '🔑 O bot usa o app da Twitch próprio (BOT_TWITCH_CLIENT_ID / BOT_TWITCH_CLIENT_SECRET), separado do login do site.'
-      : 'O bot está usando as mesmas credenciais do login do site. Para usar o app de outra conta, defina BOT_TWITCH_CLIENT_ID e BOT_TWITCH_CLIENT_SECRET no servidor.'));
+      ? '🔑 O bot usa o app da Twitch próprio (BOT_TWITCH_*).'
+      : 'O bot usa as mesmas credenciais do login. Para outro app, defina BOT_TWITCH_CLIENT_ID e BOT_TWITCH_CLIENT_SECRET.'));
     // Resultado da última tentativa de conectar (fica na tela, com o motivo)
     const [cr, ...crRest] = String(d.connectResult || '').split('|');
     const crDetail = crRest.join('|');
     const crMsg = {
-      'conta-login': `A conta "${crDetail}" foi recusada porque já entra no site como participante. Autorize com a conta do bot (janela anônima, ou saia da Twitch antes).`,
-      'conta-canal': `A conta "${crDetail}" foi recusada porque é a dona do canal. Autorize com uma conta separada, só para o bot.`,
-      erro: `Não deu para conectar: ${crDetail || 'erro desconhecido'}. Confira o Client ID/Secret do bot e se a URL de redirecionamento está cadastrada no app da Twitch.`,
+      'conta-login': `A conta "${crDetail}" já participa do site. Use a conta do bot (janela anônima ou saia da Twitch).`,
+      'conta-canal': `A conta "${crDetail}" é a dona do canal. Use uma conta separada.`,
+      erro: `Não deu para conectar: ${crDetail || 'erro desconhecido'}. Confira o Client ID/Secret e a URL de redirecionamento do app.`,
       cancelado: 'A autorização foi cancelada.',
     }[cr];
     if (crMsg) rows.push(h('p', { class: 'error' }, `⚠️ Última tentativa de conectar: ${crMsg}`));
     if (d.conflict) {
       rows.push(h('p', { class: 'error' }, d.conflict === 'canal'
-        ? '⚠️ A conta do bot é a dona do canal. Conecte uma conta separada, só para o bot.'
-        : '⚠️ A conta do bot também entra no site como participante. Conecte uma conta separada, só para o bot.'));
+        ? '⚠️ A conta do bot é a dona do canal. Use uma conta separada.'
+        : '⚠️ A conta do bot também participa do site. Use uma conta separada.'));
     }
-    rows.push(h('p', { class: 'hint' }, 'O bot precisa ser uma conta diferente da sua (a de login e a do canal). Para autorizar com outra conta, abra o botão numa janela anônima ou saia da Twitch antes: a Twitch usa a conta que estiver aberta no navegador. Na hora de autorizar, entre com a conta que vai ser o bot. Cadastre esta URL em “OAuth Redirect URLs” do app da Twitch do bot: ', h('code', {}, d.redirectUri)));
+    rows.push(h('p', { class: 'hint' }, 'Use uma conta diferente da sua. Para autorizar com ela, abra numa janela anônima (a Twitch usa a conta aberta no navegador). Cadastre esta URL em “OAuth Redirect URLs” do app do bot: ', h('code', {}, d.redirectUri)));
     box.replaceChildren(...rows);
 
     $('#bot-enabled').checked = d.enabled;
