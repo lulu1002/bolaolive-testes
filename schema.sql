@@ -363,7 +363,7 @@ alter table prize_removed enable row level security;
 create table if not exists chat_messages (
   id          bigserial primary key,
   user_id     text not null references users(id) on delete cascade,
-  body        text not null check (char_length(body) between 1 and 500),
+  body        text not null default '' check (char_length(body) <= 500),
   created_at  timestamptz not null default now(),
   deleted_at  timestamptz,
   deleted_by  text
@@ -387,3 +387,8 @@ alter table chat_mutes    enable row level security;
 -- Anexos de mídia no chat (URL http/https). media_type: image | video
 alter table chat_messages add column if not exists media_url text;
 alter table chat_messages add column if not exists media_type text;
+
+
+-- Permite mensagem só com mídia (body vazio)
+alter table chat_messages drop constraint if exists chat_messages_body_check;
+alter table chat_messages add constraint chat_messages_body_check check (char_length(body) <= 500);
