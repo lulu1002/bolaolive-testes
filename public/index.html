@@ -74,11 +74,14 @@
       <div id="chat-attach-preview" class="chat-attach-preview"></div>
       <button type="button" id="chat-attach-clear" class="chat-attach-clear" title="Remover anexo">✕</button>
     </div>
-    <form id="chat-form" class="chat-form" autocomplete="off">
-      <button type="button" id="chat-attach-btn" class="chat-attach-btn" title="Anexar imagem ou vídeo" hidden>📎</button>
-      <input id="chat-input" type="text" maxlength="500" placeholder="Mensagem ou só o anexo…" aria-label="Mensagem">
-      <button type="submit" class="chat-send" title="Enviar">➤</button>
-    </form>
+    <div class="chat-form-wrap">
+      <div id="chat-suggest" class="chat-suggest" hidden role="listbox" aria-label="Menções"></div>
+      <form id="chat-form" class="chat-form" autocomplete="off">
+        <button type="button" id="chat-attach-btn" class="chat-attach-btn" title="Anexar imagem ou vídeo" hidden>📎</button>
+        <input id="chat-input" type="text" maxlength="500" placeholder="Mensagem… use @ para mencionar" aria-label="Mensagem" autocomplete="off">
+        <button type="submit" class="chat-send" title="Enviar">➤</button>
+      </form>
+    </div>
   </aside>
   <div id="chat-backdrop" class="chat-backdrop" hidden></div>
 

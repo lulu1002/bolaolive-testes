@@ -361,8 +361,9 @@
 
           <h3 class="section-title" style="margin-top:1.5rem">Mensagens recentes</h3>
           <p class="hint">Últimas 100 mensagens. Apagadas continuam na lista marcadas como removidas.</p>
-          <div class="actions" style="margin:0.5rem 0 0.75rem">
+          <div class="actions" style="margin:0.5rem 0 0.75rem; flex-wrap:wrap">
             <button class="btn ghost small" id="chat-refresh" type="button" data-keep>Atualizar</button>
+            <button class="btn danger small" id="chat-purge-deleted" type="button">Remover apagadas do banco</button>
           </div>
           <div id="chat-msg-list" class="ach-admin-list"></div>
         </div>

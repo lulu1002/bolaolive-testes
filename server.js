@@ -2944,8 +2944,9 @@ app.get('/api/chat', requireUser, wrap(async (req, res) => {
      order by m.id asc`,
     [CHAT_HISTORY]
   );
+  const visible = canMod ? rows : rows.filter((r) => !r.deleted_at);
   res.json({
-    messages: rows.map((r) => chatMessageView(r, canMod)),
+    messages: visible.map((r) => chatMessageView(r, canMod)),
     canModerate: canMod,
     media: mediaFlags,
     muted: mute
@@ -3028,6 +3029,51 @@ app.delete('/api/admin/chat/:id', requirePerm('chat'), wrap(async (req, res) => 
   if (!rows[0]) return res.status(404).json({ error: 'Mensagem não encontrada ou já apagada.' });
   broadcastChat({ type: 'delete', id });
   res.json({ ok: true });
+}));
+
+// Remove permanentemente do banco (uma mensagem)
+app.delete('/api/admin/chat/:id/purge', requirePerm('chat'), wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id < 1) return res.status(400).json({ error: 'ID inválido.' });
+  const { rowCount } = await q('delete from chat_messages where id = $1', [id]);
+  if (!rowCount) return res.status(404).json({ error: 'Mensagem não encontrada.' });
+  broadcastChat({ type: 'purge', id });
+  res.json({ ok: true });
+}));
+
+// Remove do banco todas as mensagens já marcadas como apagadas
+app.post('/api/admin/chat/purge-deleted', requirePerm('chat'), wrap(async (req, res) => {
+  const { rowCount } = await q('delete from chat_messages where deleted_at is not null');
+  broadcastChat({ type: 'purge_deleted' });
+  res.json({ ok: true, removed: rowCount });
+}));
+
+// Busca de usuários para menção (@login) no chat
+app.get('/api/chat/users', requireUser, wrap(async (req, res) => {
+  if (!(await getChatEnabled())) {
+    return res.status(503).json({ error: 'O chat está desativado no momento.', chatEnabled: false });
+  }
+  const qtext = String(req.query.q || '').trim().toLowerCase().slice(0, 40);
+  if (!qtext) return res.json({ users: [] });
+  const { rows } = await q(
+    `select id, display_name, login, avatar_url
+     from users
+     where not banned and not is_house and not coalesce(is_test, false)
+       and (lower(login) like $1 or lower(display_name) like $1)
+     order by
+       case when lower(login) like $2 then 0 else 1 end,
+       lower(display_name)
+     limit 8`,
+    [`%${qtext}%`, `${qtext}%`]
+  );
+  res.json({
+    users: rows.map((r) => ({
+      id: r.id,
+      name: r.display_name,
+      login: r.login,
+      avatar: r.avatar_url,
+    })),
+  });
 }));
 
 app.post('/api/admin/chat/mute', requirePerm('chat'), wrap(async (req, res) => {

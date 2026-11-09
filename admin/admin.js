@@ -1013,12 +1013,17 @@
           h('div', { style: 'font-weight:500;margin-top:0.15rem;word-break:break-word' }, body),
           mediaEl
         ),
-        m.deleted ? null : h('div', { style: 'display:flex;flex-direction:column;gap:0.3rem' },
-          h('button', {
-            class: 'btn danger small', type: 'button',
-            onclick: () => deleteChatAdminMsg(m),
-          }, 'Apagar'),
-          u.id ? h('button', {
+        h('div', { style: 'display:flex;flex-direction:column;gap:0.3rem' },
+          m.deleted
+            ? h('button', {
+                class: 'btn danger small', type: 'button',
+                onclick: () => purgeChatAdminMsg(m),
+              }, 'Remover do banco')
+            : h('button', {
+                class: 'btn danger small', type: 'button',
+                onclick: () => deleteChatAdminMsg(m),
+              }, 'Apagar'),
+          (!m.deleted && u.id) ? h('button', {
             class: 'btn ghost small', type: 'button',
             onclick: () => muteChatUser(u),
           }, 'Silenciar') : null
@@ -1071,6 +1076,29 @@
     }
   }
 
+  async function purgeChatAdminMsg(m) {
+    if (!confirm('Remover esta mensagem do banco de forma permanente?')) return;
+    try {
+      await api(`/api/admin/chat/${m.id}/purge`, { method: 'DELETE' });
+      toast('Mensagem removida do banco');
+      chatAdmin.messages = chatAdmin.messages.filter((x) => x.id !== m.id);
+      renderChatMessages();
+    } catch (e) {
+      handleError(e);
+    }
+  }
+
+  async function purgeAllDeletedChat() {
+    if (!confirm('Remover do banco TODAS as mensagens já apagadas? Isso não dá para desfazer.')) return;
+    try {
+      const r = await api('/api/admin/chat/purge-deleted', { method: 'POST' });
+      toast(`${r.removed || 0} mensagem(ns) removida(s) do banco`);
+      await loadChatAdmin();
+    } catch (e) {
+      handleError(e);
+    }
+  }
+
   async function unmuteChatUser(m) {
     if (!confirm(`Tirar o silêncio de ${m.name}?`)) return;
     try {
@@ -1113,6 +1141,8 @@
 
   const chatRefreshBtn = $('#chat-refresh');
   if (chatRefreshBtn) chatRefreshBtn.addEventListener('click', () => loadChatAdmin());
+  const chatPurgeBtn = $('#chat-purge-deleted');
+  if (chatPurgeBtn) chatPurgeBtn.addEventListener('click', () => purgeAllDeletedChat());
 
   bindFlag('#notify-global', 'notify', 'notify', 'Notificações de enquete nova ligadas', 'Notificações de enquete nova desligadas', renderNotify);
   bindFlag('#notify-result', 'notifyResult', 'notifyResult', 'Aviso de resultado ligado', 'Aviso de resultado desligado', renderNotify);

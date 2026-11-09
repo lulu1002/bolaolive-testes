@@ -1075,12 +1075,24 @@
         updateChatBadge();
       }
     } else if (data.type === 'delete' && data.id != null) {
-      const m = state.chatMessages.find((x) => x.id === data.id);
-      if (m) {
-        m.deleted = true;
-        m.body = null;
+      if (state.chatCanModerate) {
+        const m = state.chatMessages.find((x) => x.id === data.id);
+        if (m) {
+          m.deleted = true;
+          m.body = null;
+          m.media = null;
+          if (state.chatOpen) renderChatMessages(false);
+        }
+      } else {
+        state.chatMessages = state.chatMessages.filter((x) => x.id !== data.id);
         if (state.chatOpen) renderChatMessages(false);
       }
+    } else if (data.type === 'purge' && data.id != null) {
+      state.chatMessages = state.chatMessages.filter((x) => x.id !== data.id);
+      if (state.chatOpen) renderChatMessages(false);
+    } else if (data.type === 'purge_deleted') {
+      state.chatMessages = state.chatMessages.filter((x) => !x.deleted);
+      if (state.chatOpen) renderChatMessages(false);
     } else if (data.type === 'mute' || data.type === 'unmute') {
       // atualiza status de mute do usuário atual
       loadChat(true);
@@ -1196,17 +1208,41 @@
     }
   }
 
+  function appendTextWithMentions(wrap, text) {
+    // @login (letras, números, _)
+    const re = /(^|[^\w])@([A-Za-z0-9_]{2,25})/g;
+    let last = 0;
+    let m;
+    while ((m = re.exec(text))) {
+      const start = m.index + m[1].length;
+      if (start > last) wrap.append(document.createTextNode(text.slice(last, start)));
+      const login = m[2];
+      wrap.append(h('span', {
+        class: 'chat-mention',
+        title: `@${login}`,
+        onclick: (e) => {
+          e.preventDefault();
+          // tenta abrir perfil se já conhecemos o usuário na conversa
+          const known = state.chatMessages.find((msg) => msg.user?.login?.toLowerCase() === login.toLowerCase());
+          if (known?.user?.id) navigate(`#perfil/${known.user.id}`);
+        },
+      }, `@${login}`));
+      last = start + 1 + login.length;
+    }
+    if (last < text.length) wrap.append(document.createTextNode(text.slice(last)));
+  }
+
   function renderChatText(text) {
     const wrap = h('div', { class: 'text' });
     if (!text) return wrap;
     const embed = state.chatMedia?.embedLinks !== false;
-    // Quebra por URLs http(s)
+    // Quebra por URLs http(s); no trecho entre URLs, destaca @menções
     const re = /(https?:\/\/[^\s<]+)/g;
     let last = 0;
     let m;
     while ((m = re.exec(text))) {
-      if (m.index > last) wrap.append(document.createTextNode(text.slice(last, m.index)));
-      const url = m[1].replace(/[.,);]+$/, ''); // tira pontuação final comum
+      if (m.index > last) appendTextWithMentions(wrap, text.slice(last, m.index));
+      const url = m[1].replace(/[.,);]+$/, '');
       const trailing = m[1].slice(url.length);
       if (embed && isImageLink(url)) {
         wrap.append(
@@ -1221,7 +1257,7 @@
       if (trailing) wrap.append(document.createTextNode(trailing));
       last = m.index + m[1].length;
     }
-    if (last < text.length) wrap.append(document.createTextNode(text.slice(last)));
+    if (last < text.length) appendTextWithMentions(wrap, text.slice(last));
     return wrap;
   }
 
@@ -1322,11 +1358,115 @@
     setChatAttach(trimmed, type);
   }
 
+
+  /* Menções (@login) */
+  const mentionState = { open: false, items: [], index: 0, start: -1, query: '' };
+  let mentionTimer = null;
+
+  function hideMentions() {
+    mentionState.open = false;
+    mentionState.items = [];
+    mentionState.index = 0;
+    const box = $('#chat-suggest');
+    if (box) {
+      box.hidden = true;
+      box.replaceChildren();
+    }
+  }
+
+  function renderMentionSuggest() {
+    const box = $('#chat-suggest');
+    if (!box) return;
+    if (!mentionState.open || !mentionState.items.length) {
+      box.hidden = true;
+      box.replaceChildren();
+      return;
+    }
+    box.hidden = false;
+    box.replaceChildren(...mentionState.items.map((u, i) => {
+      const av = u.avatar
+        ? h('img', { class: 'av', src: u.avatar, alt: '' })
+        : h('span', { class: 'av ph', style: 'display:grid;place-items:center;font-size:0.7rem;font-weight:800;border:1px solid var(--line);border-radius:999px;width:1.6rem;height:1.6rem' }, (u.name || '?')[0]);
+      return h('button', {
+        type: 'button',
+        role: 'option',
+        'aria-selected': String(i === mentionState.index),
+        onclick: () => applyMention(u),
+      }, av, h('span', {}, `${u.name} `, h('small', { class: 'hint' }, `@${u.login}`)));
+    }));
+  }
+
+  function applyMention(u) {
+    const input = $('#chat-input');
+    if (!input || mentionState.start < 0) return;
+    const val = input.value;
+    const before = val.slice(0, mentionState.start);
+    const afterCursor = val.slice(input.selectionStart || val.length);
+    // remove o trecho @query à frente do cursor
+    const cleanedAfter = afterCursor.replace(/^([A-Za-z0-9_]*)/, '');
+    const insert = `@${u.login} `;
+    input.value = before + insert + cleanedAfter;
+    const pos = before.length + insert.length;
+    input.setSelectionRange(pos, pos);
+    input.focus();
+    hideMentions();
+  }
+
+  async function updateMentionsFromInput() {
+    const input = $('#chat-input');
+    if (!input || !state.user) return hideMentions();
+    const pos = input.selectionStart || 0;
+    const left = input.value.slice(0, pos);
+    const m = left.match(/(^|[\s])@([A-Za-z0-9_]{0,25})$/);
+    if (!m) return hideMentions();
+    const query = m[2];
+    mentionState.start = left.length - query.length - 1;
+    mentionState.query = query;
+    if (query.length < 1) {
+      mentionState.open = false;
+      return renderMentionSuggest();
+    }
+    try {
+      const data = await api(`/api/chat/users?q=${encodeURIComponent(query)}`);
+      mentionState.items = data.users || [];
+      mentionState.index = 0;
+      mentionState.open = mentionState.items.length > 0;
+      renderMentionSuggest();
+    } catch (_) {
+      hideMentions();
+    }
+  }
+
+  function onChatInput() {
+    clearTimeout(mentionTimer);
+    mentionTimer = setTimeout(updateMentionsFromInput, 120);
+  }
+
+  function onChatKeydown(e) {
+    if (!mentionState.open || !mentionState.items.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      mentionState.index = (mentionState.index + 1) % mentionState.items.length;
+      renderMentionSuggest();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      mentionState.index = (mentionState.index - 1 + mentionState.items.length) % mentionState.items.length;
+      renderMentionSuggest();
+    } else if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      applyMention(mentionState.items[mentionState.index]);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      hideMentions();
+    }
+  }
+
   function setupChat() {
     const fab = $('#chat-toggle');
     const close = $('#chat-close');
     const back = $('#chat-backdrop');
     const form = $('#chat-form');
+    const input = $('#chat-input');
     if (fab) fab.addEventListener('click', () => {
       if (!state.user || !state.chatEnabled) return;
       setChatOpen(!state.chatOpen);
@@ -1335,13 +1475,25 @@
     });
     if (close) close.addEventListener('click', () => setChatOpen(false));
     if (back) back.addEventListener('click', () => setChatOpen(false));
-    if (form) form.addEventListener('submit', sendChatMessage);
+    if (form) form.addEventListener('submit', (ev) => {
+      if (mentionState.open && mentionState.items.length) {
+        ev.preventDefault();
+        applyMention(mentionState.items[mentionState.index]);
+        return;
+      }
+      sendChatMessage(ev);
+    });
+    if (input) {
+      input.addEventListener('input', onChatInput);
+      input.addEventListener('keydown', onChatKeydown);
+      input.addEventListener('blur', () => setTimeout(hideMentions, 150));
+    }
     const attachBtn = $('#chat-attach-btn');
     if (attachBtn) attachBtn.addEventListener('click', promptChatAttach);
     const attachClear = $('#chat-attach-clear');
     if (attachClear) attachClear.addEventListener('click', clearChatAttach);
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && state.chatOpen) setChatOpen(false);
+      if (e.key === 'Escape' && state.chatOpen && !mentionState.open) setChatOpen(false);
     });
     updateChatFab();
     updateChatAttachUi();
