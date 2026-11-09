@@ -678,3 +678,281 @@ dialog::backdrop { background: var(--backdrop); }
 .bet-input { width: 7.5rem; padding: 0.45rem 0.6rem; font: inherit; border-radius: 8px; border: 1px solid currentColor; background: transparent; color: inherit; }
 
 .pill.cancelled { background: transparent; border: 1px dashed currentColor; opacity: 0.8; }
+
+
+/* ---------- Chat global (sidebar) ---------- */
+.chat-fab {
+  position: fixed;
+  right: 1.1rem;
+  bottom: 1.1rem;
+  z-index: 40;
+  width: 3.4rem;
+  height: 3.4rem;
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+  background: var(--gold);
+  color: var(--on-gold);
+  font-size: 1.35rem;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.22);
+  display: grid;
+  place-items: center;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.chat-fab:hover { transform: scale(1.06); }
+.chat-fab:active { transform: scale(0.97); }
+.chat-badge {
+  position: absolute;
+  top: -0.25rem;
+  right: -0.25rem;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--miss);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--paper);
+}
+
+.chat-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  background: var(--backdrop);
+}
+
+.chat-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 50;
+  width: min(22rem, 100vw);
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--ticket);
+  color: var(--ink);
+  border-left: 2px solid var(--ink);
+  box-shadow: -8px 0 24px rgba(0,0,0,0.18);
+  transform: translateX(0);
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1.5px solid var(--line);
+  background: var(--ticket);
+}
+.chat-header strong {
+  font-stretch: 72%;
+  font-weight: 800;
+  font-size: 1.15rem;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.75rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  scroll-behavior: smooth;
+}
+
+.chat-msg {
+  display: grid;
+  grid-template-columns: 2.1rem 1fr;
+  gap: 0.5rem;
+  align-items: start;
+}
+.chat-msg .av {
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 1.5px solid var(--ink);
+  background: var(--paper);
+}
+.chat-msg .av.ph {
+  display: grid;
+  place-items: center;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+.chat-msg .bubble {
+  min-width: 0;
+  background: var(--field-bg);
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  padding: 0.4rem 0.65rem 0.5rem;
+}
+.chat-msg.mine .bubble {
+  background: var(--me-bg);
+  border-color: var(--ink-soft);
+}
+.chat-msg .meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.55rem;
+  margin-bottom: 0.15rem;
+}
+.chat-msg .name {
+  font-weight: 800;
+  font-size: 0.88rem;
+  color: var(--ink);
+}
+.chat-msg .time {
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.chat-msg .text {
+  font-size: 0.95rem;
+  line-height: 1.35;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.chat-msg.deleted .text {
+  font-style: italic;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+}
+.chat-msg .mod {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+}
+.chat-msg .mod button {
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--ticket);
+  color: var(--ink);
+  cursor: pointer;
+}
+.chat-msg .mod button:hover { background: var(--hover); }
+.chat-msg .mod button.danger { color: var(--miss-text); border-color: var(--miss); }
+
+.chat-muted {
+  padding: 0.55rem 0.85rem;
+  background: var(--miss-bg, #fde8e8);
+  color: var(--miss-text);
+  font-size: 0.88rem;
+  font-weight: 600;
+  border-top: 1px solid var(--line);
+}
+
+.chat-form {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.7rem 0.75rem;
+  border-top: 1.5px solid var(--line);
+  background: var(--ticket);
+}
+.chat-form input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  border: 1.5px solid var(--ink);
+  background: var(--field-bg);
+  color: var(--ink);
+}
+.chat-form input:focus {
+  outline: 2px solid var(--gold);
+  outline-offset: 1px;
+}
+.chat-form input:disabled {
+  opacity: 0.55;
+  background: var(--field-disabled);
+}
+.chat-send {
+  width: 2.6rem;
+  border-radius: 10px;
+  border: 1.5px solid var(--ink);
+  background: var(--ink);
+  color: var(--ticket);
+  font-size: 1.1rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.chat-send:hover { background: var(--ink-hover); }
+.chat-send:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.chat-empty {
+  margin: auto;
+  text-align: center;
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+  padding: 1.5rem;
+}
+
+/* mute popup (simples) */
+.chat-mute-pop {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--backdrop);
+  padding: 1rem;
+}
+.chat-mute-card {
+  width: min(20rem, 100%);
+  background: var(--ticket);
+  border: 2px solid var(--ink);
+  border-radius: 14px;
+  padding: 1rem 1.1rem;
+  display: grid;
+  gap: 0.7rem;
+}
+.chat-mute-card h3 { margin: 0; font-size: 1.05rem; }
+.chat-mute-card label { display: grid; gap: 0.25rem; font-size: 0.9rem; font-weight: 600; }
+.chat-mute-card select,
+.chat-mute-card input {
+  font: inherit;
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  border: 1.5px solid var(--ink);
+  background: var(--field-bg);
+  color: var(--ink);
+}
+.chat-mute-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.25rem;
+}
+.chat-mute-actions button {
+  font: inherit;
+  font-weight: 700;
+  padding: 0.4rem 0.75rem;
+  border-radius: 8px;
+  border: 1.5px solid var(--ink);
+  cursor: pointer;
+  background: var(--ticket);
+  color: var(--ink);
+}
+.chat-mute-actions button.primary {
+  background: var(--ink);
+  color: var(--ticket);
+}
+
+@media (max-width: 480px) {
+  .chat-fab { right: 0.85rem; bottom: 0.85rem; }
+  .chat-sidebar { width: 100vw; border-left: none; }
+}

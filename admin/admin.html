@@ -112,11 +112,15 @@
             </div>
             <div class="field">
               <label class="aopt"><input type="checkbox" id="f-opt-points"><span>🎯 Pontos por opção: cada opção tem a sua pontuação</span></label>
-              <span class="hint">Escreva as opções no formato <code>Texto | pontos</code> (uma por linha). Quem votar na opção certa leva os pontos dela; quem errar leva 0. Não combina com odd e não dá para mudar depois de publicar.</span>
+              <span class="hint">Escreva as opções no formato <code>Texto | pontos</code> (uma por linha). Quem votar na opção certa leva os pontos dela (de 0 a 1000; 0 vale como acerto, mas sem pontos); quem errar leva 0. Não combina com odd e não dá para mudar depois de publicar.</span>
+            </div>
+            <div class="field" id="f-sum-points-field" hidden>
+              <label class="aopt"><input type="checkbox" id="f-sum-points"><span>➕ Somar os pontos da enquete aos pontos da opção</span></label>
+              <span class="hint">Ligado: quem acerta leva os “Pontos por acerto” da enquete <b>mais</b> os pontos da opção certa (ex.: enquete 10 + opção 5 = 15). Desligado: só os pontos da opção. Dá para mudar a qualquer momento.</span>
             </div>
             <div class="field" id="f-show-opt-points-field" hidden>
-              <label class="aopt"><input type="checkbox" id="f-show-opt-points" checked><span>👁️ Mostrar os pontos de cada opção na enquete</span></label>
-              <span class="hint">Desligado, os participantes não veem a pontuação das opções enquanto votam; ela aparece quando o resultado é definido. Você pode mudar a qualquer momento.</span>
+              <label class="aopt"><input type="checkbox" id="f-show-opt-points" checked><span>👁️ Mostrar aos participantes os pontos que cada opção dá</span></label>
+              <span class="hint">Desligado, os participantes não veem quanto cada opção dá (o total que levariam) enquanto votam; aparece quando o resultado é definido. Você pode mudar a qualquer momento.</span>
             </div>
             <div class="field">
               <label class="aopt"><input type="checkbox" id="f-odds"><span>🎲 Enquete com odd: o participante aposta pontos do ranking</span></label>

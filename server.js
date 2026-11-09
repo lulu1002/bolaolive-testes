@@ -147,6 +147,7 @@ const PERMISSIONS = [
   { key: 'tests', group: 'Outros', label: 'Aba de testes (ainda pede a senha dela)' },
   { key: 'bot', group: 'Outros', label: 'Bot da Twitch (conectar, configurar e testar)' },
   { key: 'backup', group: 'Outros', label: 'Baixar backup' },
+  { key: 'chat', group: 'Outros', label: 'Moderar o chat (apagar mensagens e silenciar)' },
 ];
 const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);
 
@@ -255,6 +256,7 @@ function rowToPoll(r) {
     poolOdds: Boolean(r.pool_odds),
     optionPoints: Boolean(r.option_points),
     showOptionPoints: r.show_option_points !== false,
+    sumPoints: Boolean(r.sum_points),
     cancelled: Boolean(r.cancelled),
     maxStake: r.max_stake,
     maxWin: r.max_win,
@@ -318,8 +320,11 @@ const netWin = (stake, total, onOption, maxWin) => {
 // Sem aposta: regra antiga (p.points se acertou). Com aposta: acertou = stake*odd - stake; errou = -stake.
 const GAIN_SQL = `case
     when v.stake is null and p.option_points then
-      (case when v.option_id = p.correct_option_id
-        then coalesce((select po.points from poll_options po where po.id = v.option_id), p.points) else 0 end)
+      (case when v.option_id = p.correct_option_id then
+        (case when p.sum_points
+          then p.points + coalesce((select po.points from poll_options po where po.id = v.option_id), 0)
+          else coalesce((select po.points from poll_options po where po.id = v.option_id), p.points) end)
+       else 0 end)
     when v.stake is null and p.pool_odds then
       (case when v.option_id = p.correct_option_id then
         least(floor(p.points::numeric
@@ -373,6 +378,8 @@ function publicPoll(p, votes, userId) {
       : -myBet.stake;
   }
   const round2 = (n) => Math.round(n * 100) / 100;
+  // Pontos de quem acerta numa opção: só os da opção, ou (com "somar") os da enquete + os da opção
+  const optGain = (o) => (o ? (p.sumPoints ? p.points + (o.points ?? 0) : (o.points ?? p.points)) : p.points);
   // Odd de prêmio fixo: a parte de cada acertador = pontos da enquete ÷ nº de acertadores (com o teto de ganho)
   const capWin = (n) => (p.maxWin ? Math.min(n, p.maxWin) : n);
   const poolShare = (winners) => (winners > 0 ? capWin(Math.floor(p.points / winners)) : 0);
@@ -399,7 +406,7 @@ function publicPoll(p, votes, userId) {
         votes: showResults ? (p.odds ? countOn(o.id) : votes.filter((v) => v.option_id === o.id).length) : null,
       };
       // Pontos escondidos pelo admin só aparecem depois do resultado
-      if (p.optionPoints && (p.showOptionPoints || status === 'resolved')) base.points = o.points ?? p.points;
+      if (p.optionPoints && (p.showOptionPoints || status === 'resolved')) base.points = optGain(o);
       if (p.poolOdds) {
         // Parte do prêmio que a pessoa levaria se votasse aqui e esta opção fosse a certa
         const on = votes.filter((v) => v.option_id === o.id).length - (mine && mine.option_id === o.id ? 1 : 0);
@@ -422,7 +429,7 @@ function publicPoll(p, votes, userId) {
     myPoints:
       status === 'resolved' && mine && p.counted
         ? (p.odds && myBet ? myNet
-          : p.optionPoints ? (mine.option_id === p.correctOptionId ? (p.options.find((o) => o.id === p.correctOptionId)?.points ?? p.points) : 0)
+          : p.optionPoints ? (mine.option_id === p.correctOptionId ? optGain(p.options.find((o) => o.id === p.correctOptionId)) : 0)
           : p.poolOdds ? (mine.option_id === p.correctOptionId ? poolShare(votes.filter((v) => v.option_id === p.correctOptionId).length) : 0)
           : (mine.option_id === p.correctOptionId ? p.points : 0))
         : null,
@@ -448,6 +455,7 @@ function adminPoll(p, votes) {
     poolOdds: p.poolOdds,
     optionPoints: p.optionPoints,
     showOptionPoints: p.showOptionPoints,
+    sumPoints: p.sumPoints,
     maxStake: p.maxStake,
     maxWin: p.maxWin,
     pool: p.odds ? votes.reduce((n, v) => n + (v.stake || 0), 0) : null,
@@ -834,6 +842,7 @@ function parsePollInput(body, requireOptions) {
   const out = {
     title, description, points, closesAt, house: body?.house === true, odds, poolOdds, optionPoints,
     showOptionPoints: body?.showOptionPoints !== false,
+    sumPoints: optionPoints && body?.sumPoints === true,
     maxStake: odds ? maxStake : null, maxWin: odds || poolOdds ? maxWin : null,
   };
   if (requireOptions) {
@@ -842,11 +851,12 @@ function parsePollInput(body, requireOptions) {
       if (!optionPoints) return { text: line };
       // Pontos por opção: cada linha é "Texto | pontos"
       const cut = line.lastIndexOf('|');
-      const pts = cut < 0 ? NaN : Number(line.slice(cut + 1).trim());
+      const rawPts = cut < 0 ? '' : line.slice(cut + 1).trim();
+      const pts = rawPts === '' ? NaN : Number(rawPts); // vazio não vale 0: o admin precisa escrever o número
       return { text: cut < 0 ? line : line.slice(0, cut).trim(), points: pts, line };
     });
-    const bad = parsed.find((o) => optionPoints && (!Number.isInteger(o.points) || o.points < 1 || o.points > 1000 || !o.text));
-    if (bad) return { error: `A opção "${bad.line || bad.text}" precisa de pontos: escreva "Texto | pontos" (de 1 a 1000).` };
+    const bad = parsed.find((o) => optionPoints && (!Number.isInteger(o.points) || o.points < 0 || o.points > 1000 || !o.text));
+    if (bad) return { error: `A opção "${bad.line || bad.text}" precisa de pontos: escreva "Texto | pontos" (de 0 a 1000).` };
     parsed = parsed.filter((o, i) => parsed.findIndex((x) => x.text === o.text) === i);
     if (parsed.length < 1 || parsed.length > 10) return { error: 'Informe de 1 a 10 opções diferentes.' };
     if (parsed.some((o) => o.text.length > 100)) return { error: 'Cada opção pode ter no máximo 100 caracteres.' };
@@ -887,6 +897,10 @@ const sseClients = new Set();
 function broadcast() {
   for (const res of sseClients) res.write(`event: update\ndata: ${Date.now()}\n\n`);
 }
+function broadcastChat(payload) {
+  const data = JSON.stringify(payload);
+  for (const res of sseClients) res.write(`event: chat\ndata: ${data}\n\n`);
+}
 
 app.get('/api/events', (req, res) => {
   res.set({
@@ -914,6 +928,7 @@ const QUIET_ADMIN_PATHS = new Set(['/login', '/logout', '/settings']);
 const nameOf = (b) => b?.name || b?.title || b?.label || null;
 const ADMIN_ACTIONS = [
   ['POST', /^\/login$/, 'Entrou no painel'],
+  ['GET', /^\/backup$/, 'Baixou o backup'],
   ['POST', /^\/polls$/, 'Criou a enquete', (b) => b?.title],
   ['PUT', /^\/polls\/[^/]+$/, 'Editou a enquete', (b, c) => c.title],
   ['POST', /^\/polls\/[^/]+\/topic$/, 'Moveu a enquete de tópico', (b, c) => c.title],
@@ -966,8 +981,10 @@ async function actionContext(path) {
   return ctx;
 }
 
-async function logAdminAction(req, ctx) {
-  const hit = ADMIN_ACTIONS.find(([method, re]) => method === req.method && re.test(req.path));
+// `path` é o caminho relativo a /api/admin, capturado na entrada: depois que a resposta termina o Express já
+// restaurou req.url (caminho completo), e os padrões abaixo não casariam.
+async function logAdminAction(req, ctx, path) {
+  const hit = ADMIN_ACTIONS.find(([method, re]) => method === req.method && re.test(path));
   const a = req.admin;
   if (!hit || !a) return;
   let detail = null;
@@ -979,15 +996,17 @@ async function logAdminAction(req, ctx) {
 }
 
 app.use('/api/admin', (req, res, next) => {
-  if (req.method === 'GET') return next();
-  if (!QUIET_ADMIN_PATHS.has(req.path)) {
+  const path = req.path; // relativo ao /api/admin (só é assim agora, durante este middleware)
+  // Consultas não entram no histórico, exceto baixar o backup
+  if (req.method === 'GET' && path !== '/backup') return next();
+  if (req.method !== 'GET' && !QUIET_ADMIN_PATHS.has(path)) {
     res.on('finish', () => {
       if (res.statusCode < 400) broadcast();
     });
   }
-  actionContext(req.path).then((ctx) => {
+  actionContext(path).then((ctx) => {
     res.on('finish', () => {
-      if (res.statusCode < 400) logAdminAction(req, ctx).catch((e) => console.error('[historico]', e.message));
+      if (res.statusCode < 400) logAdminAction(req, ctx, path).catch((e) => console.error('[historico]', e.message));
     });
     next();
   });
@@ -1040,7 +1059,7 @@ async function notifyPrizeWon(userName, prizeName) {
    na enquete recebe "acertou +N" ou "dessa vez não deu". */
 async function notifyPollResult(pollId) {
   if (!PUSH_ENABLED || !(await getFlag('notify_result'))) return;
-  const { rows: pr } = await q('select title, points, correct_option_id, odds, pool_odds, option_points, max_win from polls where id = $1', [pollId]);
+  const { rows: pr } = await q('select title, points, correct_option_id, odds, pool_odds, option_points, sum_points, max_win from polls where id = $1', [pollId]);
   const poll = pr[0];
   if (!poll || !poll.correct_option_id) return;
   const { rows } = await q(
@@ -1072,7 +1091,8 @@ async function notifyPollResult(pollId) {
   }
   let gain = poll.points;
   if (poll.option_points) {
-    gain = (await q('select points from poll_options where id = $1', [poll.correct_option_id])).rows[0]?.points ?? poll.points;
+    const op = (await q('select points from poll_options where id = $1', [poll.correct_option_id])).rows[0]?.points;
+    gain = poll.sum_points ? poll.points + (op ?? 0) : (op ?? poll.points);
   } else if (poll.pool_odds) {
     // Prêmio fixo dividido: a parte de cada acertador
     const w = (await q('select count(*)::int as n from votes where poll_id = $1 and option_id = $2', [pollId, poll.correct_option_id])).rows[0].n;
@@ -1080,7 +1100,9 @@ async function notifyPollResult(pollId) {
     if (poll.max_win) gain = Math.min(gain, poll.max_win);
   }
   await sendPush(rows.filter((r) => r.hit), {
-    title: '🎯 Você acertou!', body: `+${gain} pontos em "${title}"`, url: '/#ranking',
+    title: '🎯 Você acertou!',
+    body: gain > 0 ? `+${gain} pontos em "${title}"` : `Você acertou "${title}", mas essa opção vale 0 pontos.`,
+    url: '/#ranking',
   });
   await sendPush(rows.filter((r) => !r.hit), {
     title: 'Resultado da enquete', body: `"${title}" já tem resposta. Dessa vez não deu.`, url: '/',
@@ -1575,7 +1597,7 @@ app.post('/api/admin/polls', requirePerm('polls_create'), wrap(async (req, res) 
         [topicId]
       );
     }
-    await c.query('insert into polls (id, title, description, points, closes_at, topic_id, house, odds, max_stake, max_win, pool_odds, option_points, show_option_points) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)', [
+    await c.query('insert into polls (id, title, description, points, closes_at, topic_id, house, odds, max_stake, max_win, pool_odds, option_points, show_option_points, sum_points) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)', [
       id,
       input.title,
       input.description,
@@ -1589,6 +1611,7 @@ app.post('/api/admin/polls', requirePerm('polls_create'), wrap(async (req, res) 
       input.poolOdds,
       input.optionPoints,
       input.showOptionPoints,
+      input.sumPoints,
     ]);
     for (const [i, o] of input.options.entries()) {
       await c.query('insert into poll_options (id, poll_id, label, position, points) values ($1, $2, $3, $4, $5)', [o.id, id, o.text, i, o.points]);
@@ -1627,7 +1650,7 @@ app.put('/api/admin/polls/:id', requirePerm('polls_edit', 'polls_odds'), wrap(as
     const minute = (d) => (d ? Math.floor(new Date(d).getTime() / 60000) : null);
     const baseChanged = old.title !== input.title || (old.description || '') !== (input.description || '')
       || old.points !== input.points || old.showOptionPoints !== input.showOptionPoints || Boolean(old.house) !== input.house || minute(old.closesAt) !== minute(input.closesAt);
-    const oddsChanged = Boolean(old.odds) !== input.odds || Boolean(old.poolOdds) !== input.poolOdds || (old.maxStake || null) !== input.maxStake || (old.maxWin || null) !== input.maxWin;
+    const oddsChanged = Boolean(old.sumPoints) !== input.sumPoints || Boolean(old.odds) !== input.odds || Boolean(old.poolOdds) !== input.poolOdds || (old.maxStake || null) !== input.maxStake || (old.maxWin || null) !== input.maxWin;
     if (baseChanged && !can(req, 'polls_edit')) return res.status(403).json({ error: 'Seu nível de admin não permite editar título, descrição, pontos, prazo ou casa.' });
     if (oddsChanged && !can(req, 'polls_odds')) return res.status(403).json({ error: 'Seu nível de admin não permite mudar odd nem tetos de aposta.' });
   }
@@ -1639,7 +1662,7 @@ app.put('/api/admin/polls/:id', requirePerm('polls_edit', 'polls_odds'), wrap(as
   }
   const r = await q(`update polls set title = $2, description = $3, points = $4,
       closing_notified = (closing_notified and closes_at is not distinct from $5::timestamptz), closes_at = $5,
-      house = $6, odds = $7, max_stake = $8, max_win = $9, pool_odds = $10, show_option_points = $11
+      house = $6, odds = $7, max_stake = $8, max_win = $9, pool_odds = $10, show_option_points = $11, sum_points = $12
     where id = $1`, [
     req.params.id,
     input.title,
@@ -1652,6 +1675,7 @@ app.put('/api/admin/polls/:id', requirePerm('polls_edit', 'polls_odds'), wrap(as
     input.maxWin,
     input.poolOdds,
     input.showOptionPoints,
+    input.sumPoints,
   ]);
   if (!r.rowCount) return notFound(res);
   res.json({ ok: true });
@@ -2338,7 +2362,7 @@ async function botNotify(kind, vars) {
 async function botPollResult(pollId, link) {
   const cfg = await botConfig();
   if (!cfg.enabled || !cfg.on.result) return;
-  const { rows: pr } = await q('select title, points, correct_option_id, odds, pool_odds, option_points, max_win from polls where id = $1', [pollId]);
+  const { rows: pr } = await q('select title, points, correct_option_id, odds, pool_odds, option_points, sum_points, max_win from polls where id = $1', [pollId]);
   const p = pr[0];
   if (!p || !p.correct_option_id) return;
   const opt = (await q('select label, is_house, points from poll_options where id = $1', [p.correct_option_id])).rows[0];
@@ -2354,7 +2378,7 @@ async function botPollResult(pollId, link) {
   let ganho;
   if (opt.is_house) ganho = 'a casa levou os pontos';
   else if (p.odds) ganho = c.won ? `odd ${(c.total / c.won).toFixed(2).replace('.', ',')}x` : 'sem ganhadores';
-  else if (p.option_points) ganho = money(opt.points ?? p.points);
+  else if (p.option_points) ganho = money(p.sum_points ? p.points + (opt.points ?? 0) : (opt.points ?? p.points));
   else if (p.pool_odds) {
     let share = Math.floor(p.points / Math.max(1, c.won_all));
     if (p.max_win) share = Math.min(share, p.max_win);
@@ -2375,6 +2399,7 @@ app.get('/api/admin/bot', requireAdmin, wrap(async (req, res) => {
     enabled: cfg.enabled, channel: cfg.channel, on: cfg.on, tpl: cfg.tpl,
     defaults: BOT_DEFAULTS, placeholders: BOT_PLACEHOLDERS,
     conflict: auth ? await botConflict(auth.bot_user_id, cfg.channelId) : null,
+    connectResult: await getSetting('bot_connect_result'),
     lastError: cfg.lastError, lastSent: cfg.lastSent,
     redirectUri: `${baseUrl(req)}/auth/twitch-bot/callback`,
   });
@@ -2447,8 +2472,9 @@ app.post('/api/admin/bot/disconnect', requirePerm('bot'), wrap(async (req, res) 
 }));
 
 // Conectar a conta do bot: o admin é levado à Twitch para autorizar (com a conta do bot) e volta no callback
-app.get('/api/admin/bot/connect', requirePerm('bot'), (req, res) => {
+app.get('/api/admin/bot/connect', requirePerm('bot'), wrap(async (req, res) => {
   if (!BOT_CLIENT_ID || !BOT_CLIENT_SECRET) return res.status(503).type('text').send('Credenciais do bot não configuradas (BOT_TWITCH_CLIENT_ID e BOT_TWITCH_CLIENT_SECRET).');
+  await setSetting('bot_connect_result', '');
   const state = crypto.randomBytes(16).toString('hex');
   setCookie(res, 'bot_state', state, 600);
   res.redirect(`https://id.twitch.tv/oauth2/authorize?${new URLSearchParams({
@@ -2459,17 +2485,22 @@ app.get('/api/admin/bot/connect', requirePerm('bot'), (req, res) => {
     state,
     force_verify: 'true', // sempre pergunta qual conta, para dar para escolher a do bot
   })}`);
-});
+}));
 
 app.get('/auth/twitch-bot/callback', limit('oauth', 60, 15 * 60 * 1000), wrap(async (req, res) => {
   req.admin = await getAdmin(req);
   if (!req.admin || !can(req, 'bot')) return res.status(401).type('text').send('Entre no painel admin (com permissão do bot) e tente conectar de novo.');
   const back = (r) => res.redirect(`/${ADMIN_PATH}?bot=${r}`);
+  // Guarda o resultado (e o motivo) para a aba Bot mostrar de forma fixa, sem depender do aviso rápido na tela
+  const done = async (code, detail = '') => {
+    await setSetting('bot_connect_result', `${code}|${String(detail).replace(/\s+/g, ' ').slice(0, 160)}`).catch(() => {});
+    return back(code);
+  };
   const saved = parseCookies(req).bot_state;
   setCookie(res, 'bot_state', '', 0);
   const { code, state, error } = req.query;
-  if (error) return back('cancelado');
-  if (typeof code !== 'string' || typeof state !== 'string' || !saved || state !== saved) return back('erro');
+  if (error) return done('cancelado');
+  if (typeof code !== 'string' || typeof state !== 'string' || !saved || state !== saved) return done('erro', 'sessão de conexão expirada ou inválida; tente de novo');
   try {
     const tr = await fetch('https://id.twitch.tv/oauth2/token', {
       method: 'POST',
@@ -2479,13 +2510,17 @@ app.get('/auth/twitch-bot/callback', limit('oauth', 60, 15 * 60 * 1000), wrap(as
         grant_type: 'authorization_code', redirect_uri: `${baseUrl(req)}/auth/twitch-bot/callback`,
       }),
     });
-    if (!tr.ok) { console.error('[bot] token respondeu', tr.status, await tr.text()); return back('erro'); }
+    if (!tr.ok) {
+      const txt = await tr.text();
+      console.error('[bot] token respondeu', tr.status, txt);
+      return done('erro', `a Twitch recusou o código (${tr.status}): ${txt}`);
+    }
     const tok = await tr.json();
     const ur = await fetch('https://api.twitch.tv/helix/users', {
       headers: { Authorization: `Bearer ${tok.access_token}`, 'Client-Id': BOT_CLIENT_ID },
     });
     const tw = ur.ok ? ((await ur.json()).data || [])[0] : null;
-    if (!tw || !tok.refresh_token) return back('erro');
+    if (!tw || !tok.refresh_token) return done('erro', `não foi possível ler a conta (users ${ur.status}) ou faltou o token de renovação`);
     // Conta separada: recusa a conta do próprio canal e contas que já entram no site como participantes
     const conflict = await botConflict(tw.id, await getSetting('bot_channel_id'));
     if (conflict) {
@@ -2494,7 +2529,7 @@ app.get('/auth/twitch-bot/callback', limit('oauth', 60, 15 * 60 * 1000), wrap(as
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ client_id: BOT_CLIENT_ID, token: tok.access_token }),
       }).catch(() => {});
-      return back(conflict === 'canal' ? 'conta-canal' : 'conta-login');
+      return done(conflict === 'canal' ? 'conta-canal' : 'conta-login', tw.login);
     }
     await q(
       `insert into bot_auth (id, bot_user_id, bot_login, access_token, refresh_token, expires_at, client_id)
@@ -2507,10 +2542,10 @@ app.get('/auth/twitch-bot/callback', limit('oauth', 60, 15 * 60 * 1000), wrap(as
     await q('insert into admin_log (admin_id, admin_name, action, detail) values ($1, $2, $3, $4)', [
       req.admin.id, req.admin.owner ? 'Dono' : req.admin.name, 'Conectou a conta do bot da Twitch', String(tw.login),
     ]);
-    back('ok');
+    await done('ok', tw.login);
   } catch (e) {
     console.error('[bot] conexão falhou:', e.message);
-    back('erro');
+    await done('erro', e.message);
   }
 }));
 
@@ -2804,6 +2839,180 @@ app.get('/api/admin/backup', requirePerm('backup'), wrap(async (req, res) => {
     votes: votes.rows,
     awards: awards.rows,
     settings: settings.rows,
+  });
+}));
+
+
+/* ---------- Chat global ---------- */
+const CHAT_MAX_BODY = 500;
+const CHAT_HISTORY = 100;
+
+function chatMessageView(row, canModerate) {
+  const deleted = Boolean(row.deleted_at);
+  return {
+    id: Number(row.id),
+    body: deleted && !canModerate ? null : row.body,
+    deleted,
+    createdAt: iso(row.created_at),
+    user: {
+      id: row.user_id,
+      name: row.display_name,
+      login: row.login,
+      avatar: row.avatar_url,
+    },
+  };
+}
+
+async function getActiveMute(userId) {
+  const { rows } = await q(
+    `select user_id, reason, until, created_at
+     from chat_mutes
+     where user_id = $1 and (until is null or until > now())`,
+    [userId]
+  );
+  return rows[0] || null;
+}
+
+async function canModerateChat(req) {
+  const admin = await getAdmin(req);
+  return Boolean(admin && (admin.owner || admin.perms.has('chat')));
+}
+
+app.get('/api/chat', requireUser, wrap(async (req, res) => {
+  const canMod = await canModerateChat(req);
+  const mute = await getActiveMute(req.user.id);
+  const { rows } = await q(
+    `select m.id, m.user_id, m.body, m.created_at, m.deleted_at,
+            u.display_name, u.login, u.avatar_url
+     from (
+       select id from chat_messages
+       order by id desc
+       limit $1
+     ) last
+     join chat_messages m on m.id = last.id
+     join users u on u.id = m.user_id
+     order by m.id asc`,
+    [CHAT_HISTORY]
+  );
+  res.json({
+    messages: rows.map((r) => chatMessageView(r, canMod)),
+    canModerate: canMod,
+    muted: mute
+      ? {
+          reason: mute.reason || null,
+          until: mute.until ? iso(mute.until) : null,
+          permanent: !mute.until,
+        }
+      : null,
+  });
+}));
+
+app.post('/api/chat', requireUser, limit('chat', 30, 60 * 1000), wrap(async (req, res) => {
+  const mute = await getActiveMute(req.user.id);
+  if (mute) {
+    const when = mute.until
+      ? `até ${new Date(mute.until).toLocaleString('pt-BR')}`
+      : 'permanentemente';
+    return res.status(403).json({
+      error: `Você está silenciado no chat ${when}.${mute.reason ? ' Motivo: ' + mute.reason : ''}`,
+    });
+  }
+  const body = String(req.body?.body || '').trim().replace(/\s+/g, ' ');
+  if (!body) return res.status(400).json({ error: 'Mensagem vazia.' });
+  if (body.length > CHAT_MAX_BODY) {
+    return res.status(400).json({ error: `Mensagem muito longa (máx. ${CHAT_MAX_BODY} caracteres).` });
+  }
+  const { rows } = await q(
+    `insert into chat_messages (user_id, body)
+     values ($1, $2)
+     returning id, user_id, body, created_at, deleted_at`,
+    [req.user.id, body]
+  );
+  const row = {
+    ...rows[0],
+    display_name: req.user.display_name,
+    login: req.user.login,
+    avatar_url: req.user.avatar_url,
+  };
+  const msg = chatMessageView(row, false);
+  broadcastChat({ type: 'message', message: msg });
+  res.status(201).json({ message: msg });
+}));
+
+app.delete('/api/admin/chat/:id', requirePerm('chat'), wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id < 1) return res.status(400).json({ error: 'ID inválido.' });
+  const { rows } = await q(
+    `update chat_messages
+     set deleted_at = now(), deleted_by = $2
+     where id = $1 and deleted_at is null
+     returning id`,
+    [id, req.admin.id || 'owner']
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Mensagem não encontrada ou já apagada.' });
+  broadcastChat({ type: 'delete', id });
+  res.json({ ok: true });
+}));
+
+app.post('/api/admin/chat/mute', requirePerm('chat'), wrap(async (req, res) => {
+  const userId = String(req.body?.userId || '').trim();
+  if (!userId) return res.status(400).json({ error: 'Informe o usuário.' });
+  const duration = String(req.body?.duration || 'permanent');
+  const reason = String(req.body?.reason || '').trim().slice(0, 200) || null;
+  let until = null;
+  if (duration === '1h') until = new Date(Date.now() + 60 * 60 * 1000);
+  else if (duration === '24h') until = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  else if (duration !== 'permanent') {
+    return res.status(400).json({ error: 'Duração inválida (use 1h, 24h ou permanent).' });
+  }
+  const u = await q('select id, display_name from users where id = $1', [userId]);
+  if (!u.rows[0]) return res.status(404).json({ error: 'Usuário não encontrado.' });
+  await q(
+    `insert into chat_mutes (user_id, muted_by, reason, until)
+     values ($1, $2, $3, $4)
+     on conflict (user_id) do update set
+       muted_by = excluded.muted_by,
+       reason = excluded.reason,
+       until = excluded.until,
+       created_at = now()`,
+    [userId, req.admin.id || 'owner', reason, until]
+  );
+  broadcastChat({ type: 'mute', userId });
+  res.json({
+    ok: true,
+    user: u.rows[0].display_name,
+    until: until ? iso(until) : null,
+    permanent: !until,
+  });
+}));
+
+app.delete('/api/admin/chat/mute/:userId', requirePerm('chat'), wrap(async (req, res) => {
+  const { rowCount } = await q('delete from chat_mutes where user_id = $1', [req.params.userId]);
+  if (!rowCount) return res.status(404).json({ error: 'Este usuário não está silenciado.' });
+  broadcastChat({ type: 'unmute', userId: req.params.userId });
+  res.json({ ok: true });
+}));
+
+app.get('/api/admin/chat/mutes', requirePerm('chat'), wrap(async (req, res) => {
+  const { rows } = await q(
+    `select m.user_id, m.reason, m.until, m.created_at,
+            u.display_name, u.login, u.avatar_url
+     from chat_mutes m
+     join users u on u.id = m.user_id
+     where m.until is null or m.until > now()
+     order by m.created_at desc`
+  );
+  res.json({
+    mutes: rows.map((r) => ({
+      userId: r.user_id,
+      name: r.display_name,
+      login: r.login,
+      avatar: r.avatar_url,
+      reason: r.reason,
+      until: r.until ? iso(r.until) : null,
+      permanent: !r.until,
+      createdAt: iso(r.created_at),
+    })),
   });
 }));
 

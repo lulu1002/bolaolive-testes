@@ -324,6 +324,8 @@ alter table polls add column if not exists cancelled boolean not null default fa
 -- Pontos por opção: o admin define a pontuação de cada opção (poll_options.points); quem acerta leva os pontos da opção certa.
 alter table polls add column if not exists option_points boolean not null default false;
 alter table poll_options add column if not exists points integer;
+-- Somar os pontos da enquete (polls.points) aos da opção certa. Desligado: vale só o ponto da opção.
+alter table polls add column if not exists sum_points boolean not null default false;
 -- Mostrar ou esconder os pontos de cada opção para os participantes (escondidos até sair o resultado).
 alter table polls add column if not exists show_option_points boolean not null default true;
 -- Odd de prêmio fixo (alternativa à aposta): os pontos da enquete (points) são divididos entre quem acertar,
@@ -356,3 +358,27 @@ alter table hall_places   enable row level security;
 alter table point_adjustments enable row level security;
 alter table prizes        enable row level security;
 alter table prize_removed enable row level security;
+
+-- Chat global (sidebar). Só quem está logado vê e envia. Admin com permissão "chat" modera.
+create table if not exists chat_messages (
+  id          bigserial primary key,
+  user_id     text not null references users(id) on delete cascade,
+  body        text not null check (char_length(body) between 1 and 500),
+  created_at  timestamptz not null default now(),
+  deleted_at  timestamptz,
+  deleted_by  text
+);
+create index if not exists chat_messages_created_idx on chat_messages (created_at desc);
+create index if not exists chat_messages_alive_idx on chat_messages (id desc) where deleted_at is null;
+
+-- Silenciados no chat (1h, 24h ou permanente até desmutar)
+create table if not exists chat_mutes (
+  user_id     text primary key references users(id) on delete cascade,
+  muted_by    text,
+  reason      text,
+  until       timestamptz,          -- null = permanente
+  created_at  timestamptz not null default now()
+);
+
+alter table chat_messages enable row level security;
+alter table chat_mutes    enable row level security;

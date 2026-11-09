@@ -21,6 +21,14 @@
     profileId: null,
     profile: null,
     profileError: null,
+    // chat
+    chatOpen: false,
+    chatMessages: [],
+    chatCanModerate: false,
+    chatMuted: null,
+    chatLoaded: false,
+    chatUnread: 0,
+    chatSending: false,
   };
 
   /* ---------- Utilidades ---------- */
@@ -214,13 +222,21 @@
     } else {
       box.append(h('a', { class: 'btn twitch small', href: '/auth/twitch' }, 'Entrar com a Twitch'));
     }
+    if (typeof updateChatFab === 'function') updateChatFab();
   }
 
   async function logout() {
     try { await api('/api/logout', { method: 'POST' }); } catch (_) { /* segue */ }
     state.user = null;
+    state.chatMessages = [];
+    state.chatLoaded = false;
+    state.chatCanModerate = false;
+    state.chatMuted = null;
+    state.chatUnread = 0;
     syncPushUser();
     renderWho();
+    if (typeof setChatOpen === 'function') setChatOpen(false);
+    if (typeof updateChatBadge === 'function') updateChatBadge();
     refresh();
   }
 
@@ -282,6 +298,7 @@
     if (p.myPoints > 0) {
       return h('p', { class: 'note hit' }, `Você acertou: +${p.myPoints} ${p.myPoints === 1 ? 'ponto' : 'pontos'}.`);
     }
+    if (p.myHit) return h('p', { class: 'note hit' }, 'Você acertou, mas essa opção vale 0 pontos.');
     return h('p', { class: 'note miss' }, 'Você errou desta vez. 0 pontos.');
   }
 
@@ -835,12 +852,21 @@
     const es = new EventSource('/api/events');
     let opened = false;
     es.addEventListener('open', () => {
-      if (opened) refresh(); // reconectou: pode ter perdido algo
+      if (opened) {
+        refresh(); // reconectou: pode ter perdido algo
+        if (state.user) loadChat(true);
+      }
       opened = true;
     });
     es.addEventListener('update', () => {
       // pequeno atraso aleatório para não sobrecarregar o servidor
       setTimeout(refresh, Math.random() * 400);
+    });
+    es.addEventListener('chat', (ev) => {
+      try {
+        const data = JSON.parse(ev.data);
+        handleChatEvent(data);
+      } catch (_) { /* ignore */ }
     });
   }
 
@@ -856,6 +882,289 @@
     history.replaceState(null, '', location.pathname + location.hash);
   }
 
+
+  /* ---------- Chat global (sidebar) ---------- */
+  function fmtChatTime(isoStr) {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function chatInitials(name) {
+    const p = String(name || '?').trim().split(/\s+/);
+    return ((p[0]?.[0] || '?') + (p[1]?.[0] || '')).toUpperCase();
+  }
+
+  function isNearBottom(el, px = 80) {
+    return el.scrollHeight - el.scrollTop - el.clientHeight < px;
+  }
+
+  function setChatOpen(open) {
+    state.chatOpen = open;
+    const side = $('#chat-sidebar');
+    const back = $('#chat-backdrop');
+    const fab = $('#chat-toggle');
+    if (!side || !fab) return;
+    side.hidden = !open;
+    if (back) back.hidden = !open;
+    fab.setAttribute('aria-expanded', String(open));
+    if (open) {
+      state.chatUnread = 0;
+      updateChatBadge();
+      renderChatMessages(true);
+      const input = $('#chat-input');
+      if (input && !input.disabled) setTimeout(() => input.focus(), 50);
+    }
+  }
+
+  function updateChatBadge() {
+    const badge = $('#chat-badge');
+    if (!badge) return;
+    const n = state.chatUnread;
+    if (n > 0) {
+      badge.hidden = false;
+      badge.textContent = n > 99 ? '99+' : String(n);
+    } else {
+      badge.hidden = true;
+    }
+  }
+
+  function updateChatFab() {
+    const fab = $('#chat-toggle');
+    if (!fab) return;
+    fab.hidden = !state.user;
+    if (!state.user) setChatOpen(false);
+  }
+
+  function updateChatForm() {
+    const form = $('#chat-form');
+    const mutedBox = $('#chat-muted');
+    const input = $('#chat-input');
+    const btn = form?.querySelector('button[type=submit]');
+    if (!form || !input) return;
+    const muted = state.chatMuted;
+    if (muted) {
+      form.hidden = true;
+      if (mutedBox) {
+        mutedBox.hidden = false;
+        const until = muted.permanent
+          ? 'permanentemente'
+          : muted.until
+            ? `até ${new Date(muted.until).toLocaleString('pt-BR')}`
+            : '';
+        mutedBox.textContent = `Você está silenciado ${until}.${muted.reason ? ' Motivo: ' + muted.reason : ''}`;
+      }
+    } else {
+      form.hidden = false;
+      if (mutedBox) mutedBox.hidden = true;
+      input.disabled = state.chatSending;
+      if (btn) btn.disabled = state.chatSending;
+    }
+  }
+
+  function renderChatMessages(forceScroll) {
+    const box = $('#chat-messages');
+    if (!box) return;
+    const stick = forceScroll || isNearBottom(box);
+    const msgs = state.chatMessages;
+    if (!msgs.length) {
+      box.replaceChildren(h('p', { class: 'chat-empty' }, 'Nenhuma mensagem ainda. Seja o primeiro!'));
+      return;
+    }
+    const meId = state.user?.id;
+    box.replaceChildren(...msgs.map((m) => {
+      const mine = meId && m.user?.id === meId;
+      const av = m.user?.avatar
+        ? h('img', { class: 'av', src: m.user.avatar, alt: '', width: 34, height: 34 })
+        : h('div', { class: 'av ph' }, chatInitials(m.user?.name));
+      const body = m.deleted
+        ? h('div', { class: 'text' }, 'Mensagem removida pela moderação')
+        : h('div', { class: 'text' }, m.body || '');
+      const mod = [];
+      if (state.chatCanModerate && !m.deleted) {
+        mod.push(
+          h('div', { class: 'mod' },
+            h('button', { type: 'button', class: 'danger', onclick: () => deleteChatMessage(m.id) }, 'Apagar'),
+            m.user?.id && m.user.id !== meId
+              ? h('button', { type: 'button', onclick: () => openMuteDialog(m.user) }, 'Silenciar')
+              : null
+          )
+        );
+      }
+      return h('div', { class: `chat-msg${mine ? ' mine' : ''}${m.deleted ? ' deleted' : ''}` },
+        av,
+        h('div', { class: 'bubble' },
+          h('div', { class: 'meta' },
+            h('span', { class: 'name' }, m.user?.name || 'Alguém'),
+            h('span', { class: 'time' }, fmtChatTime(m.createdAt))
+          ),
+          body,
+          ...mod
+        )
+      );
+    }));
+    if (stick) box.scrollTop = box.scrollHeight;
+  }
+
+  async function loadChat(silent) {
+    if (!state.user) return;
+    try {
+      const data = await api('/api/chat');
+      state.chatMessages = data.messages || [];
+      state.chatCanModerate = Boolean(data.canModerate);
+      state.chatMuted = data.muted || null;
+      state.chatLoaded = true;
+      updateChatForm();
+      if (state.chatOpen) renderChatMessages(true);
+    } catch (e) {
+      if (!silent) toast(e.message || 'Não foi possível carregar o chat.', true);
+    }
+  }
+
+  function handleChatEvent(data) {
+    if (!data || !state.user) return;
+    if (data.type === 'message' && data.message) {
+      const msg = data.message;
+      if (state.chatMessages.some((m) => m.id === msg.id)) return;
+      state.chatMessages.push(msg);
+      // mantém só as últimas 100
+      if (state.chatMessages.length > 100) {
+        state.chatMessages = state.chatMessages.slice(-100);
+      }
+      if (state.chatOpen) {
+        renderChatMessages(false);
+      } else if (msg.user?.id !== state.user.id) {
+        state.chatUnread += 1;
+        updateChatBadge();
+      }
+    } else if (data.type === 'delete' && data.id != null) {
+      const m = state.chatMessages.find((x) => x.id === data.id);
+      if (m) {
+        m.deleted = true;
+        m.body = null;
+        if (state.chatOpen) renderChatMessages(false);
+      }
+    } else if (data.type === 'mute' || data.type === 'unmute') {
+      // atualiza status de mute do usuário atual
+      loadChat(true);
+    }
+  }
+
+  async function sendChatMessage(ev) {
+    ev.preventDefault();
+    if (!state.user || state.chatSending || state.chatMuted) return;
+    const input = $('#chat-input');
+    const body = (input?.value || '').trim();
+    if (!body) return;
+    state.chatSending = true;
+    updateChatForm();
+    try {
+      const data = await api('/api/chat', { method: 'POST', body: { body } });
+      if (input) input.value = '';
+      // a mensagem também chega via SSE; se não chegar, inclui localmente
+      if (data.message && !state.chatMessages.some((m) => m.id === data.message.id)) {
+        state.chatMessages.push(data.message);
+        if (state.chatMessages.length > 100) state.chatMessages = state.chatMessages.slice(-100);
+        renderChatMessages(true);
+      } else {
+        renderChatMessages(true);
+      }
+    } catch (e) {
+      toast(e.message || 'Não foi possível enviar.', true);
+      // se foi silenciado no meio do caminho
+      if (String(e.message || '').includes('silenciado')) loadChat(true);
+    } finally {
+      state.chatSending = false;
+      updateChatForm();
+      input?.focus();
+    }
+  }
+
+  async function deleteChatMessage(id) {
+    if (!state.chatCanModerate) return;
+    if (!confirm('Apagar esta mensagem?')) return;
+    try {
+      await api(`/api/admin/chat/${id}`, { method: 'DELETE' });
+      const m = state.chatMessages.find((x) => x.id === id);
+      if (m) {
+        m.deleted = true;
+        m.body = null;
+        renderChatMessages(false);
+      }
+    } catch (e) {
+      toast(e.message || 'Não foi possível apagar.', true);
+    }
+  }
+
+  function openMuteDialog(user) {
+    if (!user?.id || !state.chatCanModerate) return;
+    const existing = document.querySelector('.chat-mute-pop');
+    if (existing) existing.remove();
+
+    const sel = h('select', { id: 'mute-duration' },
+      h('option', { value: '1h' }, '1 hora'),
+      h('option', { value: '24h' }, '24 horas'),
+      h('option', { value: 'permanent', selected: true }, 'Permanente')
+    );
+    const reason = h('input', { id: 'mute-reason', type: 'text', maxlength: '200', placeholder: 'Opcional' });
+
+    const pop = h('div', { class: 'chat-mute-pop', role: 'dialog', 'aria-label': 'Silenciar usuário' },
+      h('div', { class: 'chat-mute-card' },
+        h('h3', {}, `Silenciar ${user.name || 'usuário'}?`),
+        h('label', {}, 'Duração', sel),
+        h('label', {}, 'Motivo', reason),
+        h('div', { class: 'chat-mute-actions' },
+          h('button', { type: 'button', onclick: () => pop.remove() }, 'Cancelar'),
+          h('button', {
+            type: 'button',
+            class: 'primary',
+            onclick: async () => {
+              try {
+                await api('/api/admin/chat/mute', {
+                  method: 'POST',
+                  body: {
+                    userId: user.id,
+                    duration: sel.value,
+                    reason: reason.value.trim() || undefined,
+                  },
+                });
+                toast(`${user.name} foi silenciado.`);
+                pop.remove();
+              } catch (e) {
+                toast(e.message || 'Falha ao silenciar.', true);
+              }
+            },
+          }, 'Silenciar')
+        )
+      )
+    );
+    // fecha ao clicar fora do card
+    pop.addEventListener('click', (e) => { if (e.target === pop) pop.remove(); });
+    document.body.append(pop);
+  }
+
+  function setupChat() {
+    const fab = $('#chat-toggle');
+    const close = $('#chat-close');
+    const back = $('#chat-backdrop');
+    const form = $('#chat-form');
+    if (fab) fab.addEventListener('click', () => {
+      if (!state.user) return;
+      setChatOpen(!state.chatOpen);
+      if (state.chatOpen && !state.chatLoaded) loadChat();
+      else if (state.chatOpen) renderChatMessages(true);
+    });
+    if (close) close.addEventListener('click', () => setChatOpen(false));
+    if (back) back.addEventListener('click', () => setChatOpen(false));
+    if (form) form.addEventListener('submit', sendChatMessage);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && state.chatOpen) setChatOpen(false);
+    });
+    updateChatFab();
+  }
+
+
   async function init() {
     renderWho();
     initNotify();
@@ -866,6 +1175,9 @@
     } catch (_) { /* segue como visitante */ }
     syncPushUser();
     renderWho();
+    setupChat();
+    updateChatFab();
+    if (state.user) loadChat(true);
     route();
     loadPolls();
     loadPrizes();

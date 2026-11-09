@@ -56,6 +56,27 @@
   </main>
 
   <div id="toast" role="status" aria-live="polite"></div>
+
+  <!-- Chat global (sidebar) -->
+  <button id="chat-toggle" class="chat-fab" type="button" title="Abrir chat" aria-label="Abrir chat" hidden>
+    <span class="chat-fab-icon" aria-hidden="true">💬</span>
+    <span id="chat-badge" class="chat-badge" hidden>0</span>
+  </button>
+
+  <aside id="chat-sidebar" class="chat-sidebar" aria-label="Chat" hidden>
+    <header class="chat-header">
+      <strong>Chat</strong>
+      <button id="chat-close" class="icon-btn" type="button" title="Fechar chat" aria-label="Fechar chat">✕</button>
+    </header>
+    <div id="chat-messages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
+    <div id="chat-muted" class="chat-muted" hidden></div>
+    <form id="chat-form" class="chat-form" autocomplete="off">
+      <input id="chat-input" type="text" maxlength="500" placeholder="Digite uma mensagem…" aria-label="Mensagem">
+      <button type="submit" class="chat-send" title="Enviar">➤</button>
+    </form>
+  </aside>
+  <div id="chat-backdrop" class="chat-backdrop" hidden></div>
+
   <script src="/app.js"></script>
 </body>
 </html>

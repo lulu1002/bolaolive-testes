@@ -213,7 +213,7 @@
       h('span', { class: 'count' }, `${o.voters.length} ${o.voters.length === 1 ? 'voto' : 'votos'}`)));
 
     const meta = [
-      p.optionPoints ? `🎯 pontos por opção: ${p.options.map((o) => `${o.text} (${o.points})`).join(' · ')}` : p.poolOdds ? `🎲 prêmio de ${p.points} pts dividido entre quem acertar${p.maxWin ? ` · ganho máx. +${p.maxWin}` : ''}` : p.odds ? `🎲 odd · ${p.pool} pts apostados${p.maxStake ? ` · aposta máx. ${p.maxStake}` : ''}${p.maxWin ? ` · ganho máx. +${p.maxWin}` : ''}` : `${p.points} ${p.points === 1 ? 'ponto' : 'pontos'} por acerto`,
+      p.optionPoints ? `🎯 pontos por opção${p.sumPoints ? ` + ${p.points} da enquete` : ''}: ${p.options.map((o) => `${o.text} (${o.points})`).join(' · ')}` : p.poolOdds ? `🎲 prêmio de ${p.points} pts dividido entre quem acertar${p.maxWin ? ` · ganho máx. +${p.maxWin}` : ''}` : p.odds ? `🎲 odd · ${p.pool} pts apostados${p.maxStake ? ` · aposta máx. ${p.maxStake}` : ''}${p.maxWin ? ` · ganho máx. +${p.maxWin}` : ''}` : `${p.points} ${p.points === 1 ? 'ponto' : 'pontos'} por acerto`,
       p.closesAt ? `encerra em ${fmtDate(p.closesAt)}` : 'sem prazo',
       `${p.totalVotes} ${p.totalVotes === 1 ? 'voto' : 'votos'}`,
     ].join(', ');
@@ -231,7 +231,7 @@
         ? h('p', { class: 'result house' }, `🏠 A casa ganhou: nenhuma opção bateu. +${p.points} pts pra cada conta da casa.`)
         : correct
           ? h('p', { class: 'result' }, p.optionPoints
-            ? `Resposta certa: ${correct.text}. ${p.hits} de ${p.totalVotes} acertaram (+${correct.points} pts cada).`
+            ? `Resposta certa: ${correct.text}. ${p.hits} de ${p.totalVotes} acertaram (+${correct.points + (p.sumPoints ? p.points : 0)} pts cada).`
             : p.poolOdds
             ? `Resposta certa: ${correct.text}. ${p.hits} de ${p.totalVotes} acertaram (+${p.hits ? Math.min(Math.floor(p.points / p.hits), p.maxWin || Infinity) : 0} pts cada).`
             : p.odds
@@ -467,7 +467,10 @@
     const pool = $('#f-odds-kind').value === 'pool';
     $('#f-odds-limits').hidden = !can('polls_odds') || !on;
     $('#f-max-stake-field').hidden = pool;
-    document.querySelector('label[for=f-points]').textContent = on && pool ? 'Prêmio total (dividido entre quem acertar)' : 'Pontos por acerto';
+    const opt = $('#f-opt-points').checked;
+    document.querySelector('label[for=f-points]').textContent = on && pool ? 'Prêmio total (dividido entre quem acertar)'
+      : opt ? ($('#f-sum-points').checked ? 'Pontos da enquete (somados aos de cada opção)' : 'Pontos da casa (só valem se ninguém acertar)')
+      : 'Pontos por acerto';
     $('#f-odds-kind-hint').textContent = pool
       ? 'Os pontos acima viram um prêmio único: cada acertador leva o prêmio ÷ nº de acertadores (arredondado para baixo). Pouca gente na certa = parte grande; muita gente = parte pequena. Ninguém perde pontos.'
       : 'Cada participante aposta pontos do próprio ranking. Quem acerta recebe aposta × odd (total de apostadores ÷ apostadores na opção); quem erra perde a aposta. Os “Pontos por acerto” só valem se a casa ganhar.';
@@ -480,6 +483,7 @@
   function syncOptionMode() {
     const op = $('#f-opt-points').checked;
     $('#f-show-opt-points-field').hidden = !op;
+    $('#f-sum-points-field').hidden = !op || !can('polls_odds');
     if (op) $('#f-odds').checked = false;
     $('#f-odds').disabled = op;
     $('#f-opt-points').disabled = Boolean(state.editing) || $('#f-odds').checked;
@@ -487,6 +491,7 @@
     if (!state.editing) $('#f-options-hint').textContent = op ? 'De 1 a 10 opções, uma por linha, no formato Texto | pontos.' : 'De 1 a 10 opções, uma por linha.';
   }
   $('#f-opt-points').addEventListener('change', () => { syncOptionMode(); syncOddsLimits(); });
+  $('#f-sum-points').addEventListener('change', syncOddsLimits);
   $('#f-odds').addEventListener('change', () => { if ($('#f-odds').checked) $('#f-opt-points').checked = false; syncOptionMode(); });
 
   function applyFormPerms() {
@@ -509,6 +514,7 @@
     $('#f-odds').checked = false;
     $('#f-opt-points').checked = false;
     $('#f-show-opt-points').checked = true;
+    $('#f-sum-points').checked = false;
     $('#f-odds-kind').value = 'stake';
     $('#f-max-stake').value = '';
     $('#f-max-win').value = '';
@@ -536,6 +542,7 @@
     $('#f-odds').checked = Boolean(p.odds || p.poolOdds);
     $('#f-opt-points').checked = Boolean(p.optionPoints);
     $('#f-show-opt-points').checked = p.showOptionPoints !== false;
+    $('#f-sum-points').checked = Boolean(p.sumPoints);
     $('#f-odds-kind').value = p.poolOdds ? 'pool' : 'stake';
     $('#f-max-stake').value = p.maxStake || '';
     $('#f-max-win').value = p.maxWin || '';
@@ -588,6 +595,7 @@
       house: $('#f-house').checked,
       optionPoints: $('#f-opt-points').checked,
       showOptionPoints: $('#f-show-opt-points').checked,
+      sumPoints: $('#f-opt-points').checked && $('#f-sum-points').checked,
       odds: $('#f-odds').checked && $('#f-odds-kind').value === 'stake',
       poolOdds: $('#f-odds').checked && $('#f-odds-kind').value === 'pool',
       maxStake: $('#f-max-stake').value,
@@ -1044,6 +1052,16 @@
     rows.push(h('p', { class: 'hint' }, d.ownApp
       ? '🔑 O bot usa o app da Twitch próprio (BOT_TWITCH_CLIENT_ID / BOT_TWITCH_CLIENT_SECRET), separado do login do site.'
       : 'O bot está usando as mesmas credenciais do login do site. Para usar o app de outra conta, defina BOT_TWITCH_CLIENT_ID e BOT_TWITCH_CLIENT_SECRET no servidor.'));
+    // Resultado da última tentativa de conectar (fica na tela, com o motivo)
+    const [cr, ...crRest] = String(d.connectResult || '').split('|');
+    const crDetail = crRest.join('|');
+    const crMsg = {
+      'conta-login': `A conta "${crDetail}" foi recusada porque já entra no site como participante. Autorize com a conta do bot (janela anônima, ou saia da Twitch antes).`,
+      'conta-canal': `A conta "${crDetail}" foi recusada porque é a dona do canal. Autorize com uma conta separada, só para o bot.`,
+      erro: `Não deu para conectar: ${crDetail || 'erro desconhecido'}. Confira o Client ID/Secret do bot e se a URL de redirecionamento está cadastrada no app da Twitch.`,
+      cancelado: 'A autorização foi cancelada.',
+    }[cr];
+    if (crMsg) rows.push(h('p', { class: 'error' }, `⚠️ Última tentativa de conectar: ${crMsg}`));
     if (d.conflict) {
       rows.push(h('p', { class: 'error' }, d.conflict === 'canal'
         ? '⚠️ A conta do bot é a dona do canal. Conecte uma conta separada, só para o bot.'
