@@ -54,7 +54,6 @@
         <button type="button" role="tab" id="atab-prizes" aria-controls="apane-prizes" aria-selected="false">🏅 Prêmio</button>
         <button type="button" role="tab" id="atab-hall" aria-controls="apane-hall" aria-selected="false">🏆pódio semanal</button>
         <button type="button" role="tab" id="atab-users" aria-controls="apane-users" aria-selected="false">👥 Os meliantes </button>
-        <button type="button" role="tab" id="atab-chat" data-perm="chat|settings" aria-controls="apane-chat" aria-selected="false">💬 Chat</button>
         <button type="button" role="tab" id="atab-tests" data-perm="tests" aria-controls="apane-tests" aria-selected="false">🧪 Testes</button>
         <button type="button" role="tab" id="atab-admins" aria-controls="apane-admins" aria-selected="false" data-perm="owner">🔑 Admins</button>
         <button type="button" role="tab" id="atab-bot" aria-controls="apane-bot" aria-selected="false">🤖 Bot</button>
@@ -65,53 +64,11 @@
       <div id="apane-create" role="tabpanel" aria-labelledby="atab-create" hidden>
         <section class="panel narrow-md" id="form-panel" data-need="polls_create|polls_edit|polls_odds">
           <h2 id="form-title">Nova enquete</h2>
-          <fieldset class="modes" data-need="settings">
-            <legend>Ao publicar uma nova enquete (vale dentro do mesmo tópico)</legend>
-            <label class="aopt"><input type="radio" name="mode" value="replace"><span>Substituir a enquete do mesmo tópico na página principal</span></label>
-            <label class="aopt"><input type="radio" name="mode" value="accumulate"><span>Acumular com as anteriores</span></label>
-            <span class="hint">Enquetes substituídas saem da página, mas continuam aqui no painel e valem pontos quando você define a resposta.</span>
-          </fieldset>
-          <fieldset class="modes" data-need="settings">
-            <legend>Trava de voto</legend>
-            <label class="aopt"><input type="checkbox" id="lock-votes"><span>🔒 Não deixar o participante trocar o voto: votou, está votado</span></label>
-            <span class="hint">Vale para todas as enquetes (normais e com odd), inclusive as que já têm votos. Desligado, dá para trocar o voto até a votação encerrar.</span>
-          </fieldset>
-          <fieldset class="modes" data-need="settings">
-            <legend>Notificações</legend>
-            <label class="aopt"><input type="checkbox" id="notify-global"><span>Enquete nova: avisar os inscritos quando for publicada</span></label>
-            <span class="hint" id="notify-global-hint">Chave geral: desligada, nenhuma publicação envia notificação, mesmo com a caixa da enquete marcada.</span>
-            <label class="aopt"><input type="checkbox" id="notify-result"><span>Resultado: avisar cada participante se acertou ou não, quando você define a resposta</span></label>
-            <label class="aopt"><input type="checkbox" id="notify-closing"><span>Enquete fechando: lembrar, cerca de 1 hora antes, quem ainda não votou</span></label>
-            <span class="hint" id="notify-extra-hint"></span>
-          </fieldset>
           <form id="poll-form">
-            <div class="field">
-              <label for="f-title">Pergunta</label>
-              <input id="f-title" maxlength="200" required>
-            </div>
-            <div class="field">
-              <label for="f-desc">Descrição (opcional)</label>
-              <textarea id="f-desc" rows="3" maxlength="1000"></textarea>
-            </div>
-            <div class="field">
-              <label for="f-options">Opções</label>
-              <textarea id="f-options" rows="4" placeholder="Uma opção por linha"></textarea>
-              <span class="hint" id="f-options-hint">De 1 a 10 opções, uma por linha.</span>
-            </div>
-            <div class="field">
-              <label for="f-points">Pontos por acerto</label>
-              <input id="f-points" type="number" min="1" max="1000" step="1" value="10">
-            </div>
-            <div class="field">
-              <label for="f-closes">Votação encerra em (opcional)</label>
-              <input id="f-closes" type="datetime-local">
-              <span class="hint">Sem data, a votação fica aberta até você encerrar.</span>
-            </div>
-            <div class="field">
-              <label class="aopt"><input type="checkbox" id="f-house"><span>🏠 Casa: as contas da casa participam desta enquete</span></label>
-              <span class="hint">Ao confirmar uma resposta, você escolhe quais contas da casa erram (perdem a sequência e ganham o erro no histórico). Se a casa ganhar, as contas escolhidas somam o acerto e mantêm a sequência.</span>
-            </div>
-            <div class="field">
+            <fieldset class="modes type-box" id="f-type-box">
+              <legend>🎛️ Tipo de enquete</legend>
+              <span class="hint">Deixe tudo desmarcado para uma enquete normal. Escolha no máximo um tipo: pontos por opção <b>ou</b> odd.</span>
+<div class="field">
               <label class="aopt"><input type="checkbox" id="f-opt-points"><span>🎯 Pontos por opção: cada opção tem a sua pontuação</span></label>
               <span class="hint">Escreva as opções no formato <code>Texto | pontos</code> (uma por linha). Quem votar na opção certa leva os pontos dela (de 0 a 1000; 0 vale como acerto, mas sem pontos); quem errar leva 0. Não combina com odd e não dá para mudar depois de publicar.</span>
             </div>
@@ -146,6 +103,33 @@
                 <span class="hint" id="f-max-win-hint">Teto do lucro líquido de quem acertar. Em branco, o prêmio é só aposta × odd.</span>
               </div>
             </div>
+            </fieldset>
+                        <div class="field">
+              <label for="f-title">Pergunta</label>
+              <input id="f-title" maxlength="200" required>
+            </div>
+            <div class="field">
+              <label for="f-desc">Descrição (opcional)</label>
+              <textarea id="f-desc" rows="3" maxlength="1000"></textarea>
+            </div>
+            <div class="field">
+              <label for="f-options">Opções</label>
+              <textarea id="f-options" rows="4" placeholder="Uma opção por linha"></textarea>
+              <span class="hint" id="f-options-hint">De 1 a 10 opções, uma por linha.</span>
+            </div>
+            <div class="field">
+              <label for="f-points">Pontos por acerto</label>
+              <input id="f-points" type="number" min="1" max="1000" step="1" value="10">
+            </div>
+            <div class="field">
+              <label for="f-closes">Votação encerra em (opcional)</label>
+              <input id="f-closes" type="datetime-local">
+              <span class="hint">Sem data, a votação fica aberta até você encerrar.</span>
+            </div>
+            <div class="field">
+              <label class="aopt"><input type="checkbox" id="f-house"><span>🏠 Casa: as contas da casa participam desta enquete</span></label>
+              <span class="hint">Ao confirmar uma resposta, você escolhe quais contas da casa erram (perdem a sequência e ganham o erro no histórico). Se a casa ganhar, as contas escolhidas somam o acerto e mantêm a sequência.</span>
+            </div>
             <div class="field" id="f-notify-field">
               <label class="aopt"><input type="checkbox" id="f-notify" checked><span>Notificar os inscritos ao publicar esta enquete</span></label>
               <span class="hint" id="f-notify-hint">Desmarque para publicar sem avisar ninguém.</span>
@@ -156,6 +140,28 @@
               <button class="btn ghost" id="form-cancel" type="button" hidden>Cancelar edição</button>
             </div>
           </form>
+          <details class="subpanel" id="general-settings">
+            <summary>⚙️ Configurações gerais (valem para todas as enquetes)</summary>
+            <fieldset class="modes" data-need="settings">
+            <legend>Ao publicar uma nova enquete (vale dentro do mesmo tópico)</legend>
+            <label class="aopt"><input type="radio" name="mode" value="replace"><span>Substituir a enquete do mesmo tópico na página principal</span></label>
+            <label class="aopt"><input type="radio" name="mode" value="accumulate"><span>Acumular com as anteriores</span></label>
+            <span class="hint">Enquetes substituídas saem da página, mas continuam aqui no painel e valem pontos quando você define a resposta.</span>
+          </fieldset>
+          <fieldset class="modes" data-need="settings">
+            <legend>Trava de voto</legend>
+            <label class="aopt"><input type="checkbox" id="lock-votes"><span>🔒 Não deixar o participante trocar o voto: votou, está votado</span></label>
+            <span class="hint">Vale para todas as enquetes (normais e com odd), inclusive as que já têm votos. Desligado, dá para trocar o voto até a votação encerrar.</span>
+          </fieldset>
+          <fieldset class="modes" data-need="settings">
+            <legend>Notificações</legend>
+            <label class="aopt"><input type="checkbox" id="notify-global"><span>Enquete nova: avisar os inscritos quando for publicada</span></label>
+            <span class="hint" id="notify-global-hint">Chave geral: desligada, nenhuma publicação envia notificação, mesmo com a caixa da enquete marcada.</span>
+            <label class="aopt"><input type="checkbox" id="notify-result"><span>Resultado: avisar cada participante se acertou ou não, quando você define a resposta</span></label>
+            <label class="aopt"><input type="checkbox" id="notify-closing"><span>Enquete fechando: lembrar, cerca de 1 hora antes, quem ainda não votou</span></label>
+            <span class="hint" id="notify-extra-hint"></span>
+          </fieldset>
+          </details>
         </section>
       </div>
 
@@ -332,41 +338,6 @@
           <input id="user-search" data-keep type="search" placeholder="Nome ou login" autocomplete="off">
         </div>
         <div id="user-list" class="ach-admin-list"></div>
-      </section>
-      </div>
-
-      <div id="apane-chat" data-need="chat|settings" role="tabpanel" aria-labelledby="atab-chat" hidden>
-      <section class="panel" id="chat-panel">
-        <h2>💬 Chat</h2>
-        <p class="hint">Liga/desliga o chat no site, silencia participantes e apaga mensagens.</p>
-
-        <fieldset class="modes" data-need="settings">
-          <legend>Disponibilidade</legend>
-          <label class="aopt"><input type="checkbox" id="chat-enabled"><span>💬 Chat no site principal</span></label>
-          <span class="hint">Desligado, o botão some para todo mundo e ninguém envia mensagem. O histórico fica guardado.</span>
-        </fieldset>
-
-        <fieldset class="modes" data-need="settings">
-          <legend>Mídia</legend>
-          <label class="aopt"><input type="checkbox" id="chat-images"><span>🖼️ Permitir anexar imagens (por link)</span></label>
-          <label class="aopt"><input type="checkbox" id="chat-videos"><span>🎬 Permitir anexar vídeos (por link)</span></label>
-          <label class="aopt"><input type="checkbox" id="chat-embed-links"><span>🔗 Mostrar preview de links de imagem (.png, .jpg, .jpeg…)</span></label>
-          <span class="hint">Anexos usam URL (http/https). O preview automático transforma links de imagem no texto em miniatura clicável.</span>
-        </fieldset>
-
-        <div data-need="chat">
-          <h3 class="section-title" style="margin-top:1.25rem">Silenciados</h3>
-          <p class="hint">Quem está impedido de escrever no chat agora.</p>
-          <div id="chat-mute-list" class="ach-admin-list"></div>
-
-          <h3 class="section-title" style="margin-top:1.5rem">Mensagens recentes</h3>
-          <p class="hint">Últimas 100 mensagens. Apagadas continuam na lista marcadas como removidas.</p>
-          <div class="actions" style="margin:0.5rem 0 0.75rem; flex-wrap:wrap">
-            <button class="btn ghost small" id="chat-refresh" type="button" data-keep>Atualizar</button>
-            <button class="btn danger small" id="chat-purge-deleted" type="button">Remover apagadas do banco</button>
-          </div>
-          <div id="chat-msg-list" class="ach-admin-list"></div>
-        </div>
       </section>
       </div>
 

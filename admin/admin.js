@@ -2,7 +2,7 @@
   'use strict';
 
   const $ = (sel, root = document) => root.querySelector(sel);
-  const state = { notifyPrize: true, prizes: [], prizeEditing: null, adminUsers: [], polls: [], topics: [], topicTab: null, users: 0, editing: null, mode: 'replace', streak: { every: 0, bonus: 0 }, notify: true, notifyResult: true, notifyClosing: true, hallVisible: true, lockVotes: false, chatEnabled: true, chatImages: true, chatVideos: true, chatEmbedLinks: true, hall: [], pushEnabled: true, house: [], houseEditing: null, achievements: [], achEditing: null };
+  const state = { notifyPrize: true, prizes: [], prizeEditing: null, adminUsers: [], polls: [], topics: [], topicTab: null, users: 0, editing: null, mode: 'replace', streak: { every: 0, bonus: 0 }, notify: true, notifyResult: true, notifyClosing: true, hallVisible: true, lockVotes: false, hall: [], pushEnabled: true, house: [], houseEditing: null, achievements: [], achEditing: null };
 
   /* ---------- Utilidades ---------- */
   function h(tag, attrs = {}, ...children) {
@@ -77,7 +77,7 @@
     $('#admin-pass').focus();
   }
 
-  const ADMIN_TABS = ['create', 'polls', 'house', 'streak', 'ach', 'prizes', 'hall', 'users', 'chat', 'tests', 'admins', 'bot', 'log', 'backup'];
+  const ADMIN_TABS = ['create', 'polls', 'house', 'streak', 'ach', 'prizes', 'hall', 'users', 'tests', 'admins', 'bot', 'log', 'backup'];
 
   // Nível de acesso de quem está logado (vem de /api/admin/me). O servidor confere tudo de novo; aqui só se esconde o que não vale.
   let me = { owner: false, permissions: [], name: '' };
@@ -119,7 +119,6 @@
     // Estas abas carregam só quando abertas (a lista de usuários é a mais pesada)
     if (tab === 'prizes') loadPrizes();
     if (tab === 'users') loadUsers();
-    if (tab === 'chat') loadChatAdmin();
     if (tab === 'tests') loadTests();
     if (tab === 'admins') loadAdmins();
     if (tab === 'log') loadLog(true);
@@ -170,18 +169,6 @@
       state.hallVisible = data.hallVisible;
       state.lockVotes = data.lockVotes;
       $('#lock-votes').checked = state.lockVotes;
-      state.chatEnabled = data.chatEnabled !== false;
-      state.chatImages = data.chatImages !== false;
-      state.chatVideos = data.chatVideos !== false;
-      state.chatEmbedLinks = data.chatEmbedLinks !== false;
-      const chatCb = $('#chat-enabled');
-      if (chatCb) chatCb.checked = state.chatEnabled;
-      const imgCb = $('#chat-images');
-      if (imgCb) imgCb.checked = state.chatImages;
-      const vidCb = $('#chat-videos');
-      if (vidCb) vidCb.checked = state.chatVideos;
-      const embCb = $('#chat-embed-links');
-      if (embCb) embCb.checked = state.chatEmbedLinks;
       state.pushEnabled = data.pushEnabled;
       renderMode();
       renderNotify();
@@ -510,6 +497,7 @@
   function applyFormPerms() {
     const lockBase = Boolean(state.editing) && !can('polls_edit');
     ['#f-title', '#f-desc', '#f-points', '#f-closes', '#f-house', '#f-show-opt-points'].forEach((s) => { $(s).disabled = lockBase; });
+    $('#f-type-box').hidden = !can('polls_odds'); // a caixa do tipo de enquete só aparece para quem pode definir odd/pontos por opção
     $('#f-odds').closest('.field').hidden = !can('polls_odds');
     $('#f-opt-points').closest('.field').hidden = !can('polls_odds');
     syncOptionMode();
@@ -940,210 +928,6 @@
     });
   }
   bindFlag('#lock-votes', 'lockVotes', 'lockVotes', 'Trava de voto ligada: não dá mais para trocar o voto', 'Trava de voto desligada', () => {});
-  bindFlag('#chat-enabled', 'chatEnabled', 'chatEnabled', 'Chat ligado no site principal', 'Chat desligado no site principal', () => {});
-  bindFlag('#chat-images', 'chatImages', 'chatImages', 'Anexos de imagem ligados', 'Anexos de imagem desligados', () => {});
-  bindFlag('#chat-videos', 'chatVideos', 'chatVideos', 'Anexos de vídeo ligados', 'Anexos de vídeo desligados', () => {});
-  bindFlag('#chat-embed-links', 'chatEmbedLinks', 'chatEmbedLinks', 'Preview de links de imagem ligado', 'Preview de links de imagem desligado', () => {});
-
-  /* ---------- Aba Chat (config + moderação) ---------- */
-  const chatAdmin = { mutes: [], messages: [], loaded: false };
-
-  function fmtChatWhen(isoStr) {
-    if (!isoStr) return '';
-    const d = new Date(isoStr);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-  }
-
-  function renderChatMutes() {
-    const box = $('#chat-mute-list');
-    if (!box) return;
-    box.replaceChildren();
-    if (!chatAdmin.mutes.length) {
-      box.append(h('p', { class: 'hint' }, 'Ninguém silenciado no momento.'));
-      return;
-    }
-    box.append(...chatAdmin.mutes.map((m) => {
-      const until = m.permanent
-        ? 'Permanente'
-        : (m.until ? `Até ${fmtChatWhen(m.until)}` : '');
-      const reason = m.reason ? ` · ${m.reason}` : '';
-      return h('div', { class: 'house-row' },
-        m.avatar
-          ? h('img', { class: 'ach-thumb', src: m.avatar, alt: '', referrerpolicy: 'no-referrer' })
-          : h('span', { class: 'ach-thumb ph' }, (m.name || '?').slice(0, 1).toUpperCase()),
-        h('span', { class: 'nm' },
-          `${m.name} (@${m.login})`,
-          h('small', { class: 'hint' }, `${until}${reason}`)
-        ),
-        h('button', {
-          class: 'btn small', type: 'button',
-          onclick: () => unmuteChatUser(m),
-        }, 'Tirar silêncio')
-      );
-    }));
-  }
-
-  function renderChatMessages() {
-    const box = $('#chat-msg-list');
-    if (!box) return;
-    box.replaceChildren();
-    if (!chatAdmin.messages.length) {
-      box.append(h('p', { class: 'hint' }, 'Nenhuma mensagem ainda.'));
-      return;
-    }
-    box.append(...chatAdmin.messages.map((m) => {
-      const u = m.user || {};
-      const body = m.deleted
-        ? h('small', { class: 'hint' }, 'Mensagem removida pela moderação')
-        : h('span', {}, m.body || '');
-      const mediaEl = (!m.deleted && m.media && m.media.url)
-        ? (m.media.type === 'video'
-            ? h('video', { class: 'chat-admin-media', src: m.media.url, controls: true, preload: 'metadata' })
-            : h('a', { href: m.media.url, target: '_blank', rel: 'noopener noreferrer' },
-                h('img', { class: 'chat-admin-media', src: m.media.url, alt: 'anexo' })))
-        : null;
-      return h('div', { class: 'house-row', style: m.deleted ? 'opacity:0.65' : '' },
-        u.avatar
-          ? h('img', { class: 'ach-thumb', src: u.avatar, alt: '', referrerpolicy: 'no-referrer' })
-          : h('span', { class: 'ach-thumb ph' }, (u.name || '?').slice(0, 1).toUpperCase()),
-        h('span', { class: 'nm' },
-          `${u.name || 'Alguém'}`,
-          h('small', { class: 'hint' }, fmtChatWhen(m.createdAt)),
-          h('div', { style: 'font-weight:500;margin-top:0.15rem;word-break:break-word' }, body),
-          mediaEl
-        ),
-        h('div', { style: 'display:flex;flex-direction:column;gap:0.3rem' },
-          m.deleted
-            ? h('button', {
-                class: 'btn danger small', type: 'button',
-                onclick: () => purgeChatAdminMsg(m),
-              }, 'Remover do banco')
-            : h('button', {
-                class: 'btn danger small', type: 'button',
-                onclick: () => deleteChatAdminMsg(m),
-              }, 'Apagar'),
-          (!m.deleted && u.id) ? h('button', {
-            class: 'btn ghost small', type: 'button',
-            onclick: () => muteChatUser(u),
-          }, 'Silenciar') : null
-        )
-      );
-    }));
-  }
-
-  async function loadChatAdmin() {
-    const cb = $('#chat-enabled');
-    if (cb) cb.checked = state.chatEnabled !== false;
-    const imgCb = $('#chat-images');
-    if (imgCb) imgCb.checked = state.chatImages !== false;
-    const vidCb = $('#chat-videos');
-    if (vidCb) vidCb.checked = state.chatVideos !== false;
-    const embCb = $('#chat-embed-links');
-    if (embCb) embCb.checked = state.chatEmbedLinks !== false;
-    // Config (toggle) pode ser lida por quem tem settings; moderação exige chat
-    if (can('chat') || me.owner) {
-      try {
-        const [mutesRes, msgsRes] = await Promise.all([
-          api('/api/admin/chat/mutes'),
-          api('/api/admin/chat/messages'),
-        ]);
-        chatAdmin.mutes = mutesRes.mutes || [];
-        chatAdmin.messages = msgsRes.messages || [];
-        chatAdmin.loaded = true;
-        renderChatMutes();
-        renderChatMessages();
-      } catch (e) {
-        handleError(e);
-      }
-    } else {
-      const muteBox = $('#chat-mute-list');
-      const msgBox = $('#chat-msg-list');
-      if (muteBox) muteBox.replaceChildren(h('p', { class: 'hint' }, 'Seu nível não permite moderar o chat.'));
-      if (msgBox) msgBox.replaceChildren();
-    }
-  }
-
-  async function deleteChatAdminMsg(m) {
-    if (!confirm('Apagar esta mensagem do chat?')) return;
-    try {
-      await api(`/api/admin/chat/${m.id}`, { method: 'DELETE' });
-      toast('Mensagem apagada');
-      m.deleted = true;
-      renderChatMessages();
-    } catch (e) {
-      handleError(e);
-    }
-  }
-
-  async function purgeChatAdminMsg(m) {
-    if (!confirm('Remover esta mensagem do banco de forma permanente?')) return;
-    try {
-      await api(`/api/admin/chat/${m.id}/purge`, { method: 'DELETE' });
-      toast('Mensagem removida do banco');
-      chatAdmin.messages = chatAdmin.messages.filter((x) => x.id !== m.id);
-      renderChatMessages();
-    } catch (e) {
-      handleError(e);
-    }
-  }
-
-  async function purgeAllDeletedChat() {
-    if (!confirm('Remover do banco TODAS as mensagens já apagadas? Isso não dá para desfazer.')) return;
-    try {
-      const r = await api('/api/admin/chat/purge-deleted', { method: 'POST' });
-      toast(`${r.removed || 0} mensagem(ns) removida(s) do banco`);
-      await loadChatAdmin();
-    } catch (e) {
-      handleError(e);
-    }
-  }
-
-  async function unmuteChatUser(m) {
-    if (!confirm(`Tirar o silêncio de ${m.name}?`)) return;
-    try {
-      await api(`/api/admin/chat/mute/${m.userId}`, { method: 'DELETE' });
-      toast(`${m.name} pode voltar a escrever`);
-      chatAdmin.mutes = chatAdmin.mutes.filter((x) => x.userId !== m.userId);
-      renderChatMutes();
-    } catch (e) {
-      handleError(e);
-    }
-  }
-
-  async function muteChatUser(u) {
-    const duration = prompt(
-      `Silenciar ${u.name}?\nDigite a duração: 1h, 24h ou permanente`,
-      '24h'
-    );
-    if (duration == null) return;
-    const raw = String(duration).trim().toLowerCase();
-    let d = 'permanent';
-    if (raw === '1h' || raw === '1') d = '1h';
-    else if (raw === '24h' || raw === '24') d = '24h';
-    else if (raw === 'permanente' || raw === 'permanent' || raw === 'p') d = 'permanent';
-    else {
-      toast('Duração inválida. Use 1h, 24h ou permanente.', true);
-      return;
-    }
-    const reason = prompt('Motivo (opcional):', '') || '';
-    try {
-      await api('/api/admin/chat/mute', {
-        method: 'POST',
-        body: { userId: u.id, duration: d, reason: reason.trim() || undefined },
-      });
-      toast(`${u.name} silenciado`);
-      await loadChatAdmin();
-    } catch (e) {
-      handleError(e);
-    }
-  }
-
-  const chatRefreshBtn = $('#chat-refresh');
-  if (chatRefreshBtn) chatRefreshBtn.addEventListener('click', () => loadChatAdmin());
-  const chatPurgeBtn = $('#chat-purge-deleted');
-  if (chatPurgeBtn) chatPurgeBtn.addEventListener('click', () => purgeAllDeletedChat());
-
   bindFlag('#notify-global', 'notify', 'notify', 'Notificações de enquete nova ligadas', 'Notificações de enquete nova desligadas', renderNotify);
   bindFlag('#notify-result', 'notifyResult', 'notifyResult', 'Aviso de resultado ligado', 'Aviso de resultado desligado', renderNotify);
   bindFlag('#notify-closing', 'notifyClosing', 'notifyClosing', 'Lembrete de enquete fechando ligado', 'Lembrete de enquete fechando desligado', renderNotify);
