@@ -29,6 +29,7 @@
     chatLoaded: false,
     chatUnread: 0,
     chatSending: false,
+    chatEnabled: true,
   };
 
   /* ---------- Utilidades ---------- */
@@ -248,6 +249,10 @@
       state.topics = data.topics || [];
       state.lockVotes = Boolean(data.lockVotes);
       state.balance = data.balance == null ? null : data.balance;
+      if (data.chatEnabled !== undefined) {
+        state.chatEnabled = Boolean(data.chatEnabled);
+        updateChatFab();
+      }
       state.pollsError = null;
     } catch (e) {
       state.pollsError = e.message;
@@ -933,8 +938,9 @@
   function updateChatFab() {
     const fab = $('#chat-toggle');
     if (!fab) return;
-    fab.hidden = !state.user;
-    if (!state.user) setChatOpen(false);
+    const show = Boolean(state.user && state.chatEnabled);
+    fab.hidden = !show;
+    if (!show) setChatOpen(false);
   }
 
   function updateChatForm() {
@@ -1008,7 +1014,7 @@
   }
 
   async function loadChat(silent) {
-    if (!state.user) return;
+    if (!state.user || !state.chatEnabled) return;
     try {
       const data = await api('/api/chat');
       state.chatMessages = data.messages || [];
@@ -1018,6 +1024,12 @@
       updateChatForm();
       if (state.chatOpen) renderChatMessages(true);
     } catch (e) {
+      // chat desligado no servidor
+      if (String(e.message || '').includes('desativado')) {
+        state.chatEnabled = false;
+        updateChatFab();
+        return;
+      }
       if (!silent) toast(e.message || 'Não foi possível carregar o chat.', true);
     }
   }
@@ -1150,7 +1162,7 @@
     const back = $('#chat-backdrop');
     const form = $('#chat-form');
     if (fab) fab.addEventListener('click', () => {
-      if (!state.user) return;
+      if (!state.user || !state.chatEnabled) return;
       setChatOpen(!state.chatOpen);
       if (state.chatOpen && !state.chatLoaded) loadChat();
       else if (state.chatOpen) renderChatMessages(true);
@@ -1172,12 +1184,13 @@
     try {
       const me = await api('/api/me');
       state.user = me.user;
+      if (me.chatEnabled !== undefined) state.chatEnabled = Boolean(me.chatEnabled);
     } catch (_) { /* segue como visitante */ }
     syncPushUser();
     renderWho();
     setupChat();
     updateChatFab();
-    if (state.user) loadChat(true);
+    if (state.user && state.chatEnabled) loadChat(true);
     route();
     loadPolls();
     loadPrizes();

@@ -342,6 +342,11 @@ const GAIN_SQL = `case
     else -v.stake
   end`;
 
+// Chat global: ligado por padrão; só desliga quando o admin salva '0' em settings.chat_enabled.
+async function getChatEnabled() {
+  return getFlag('chat_enabled');
+}
+
 // Trava de voto: ligada, quem já votou numa enquete não pode trocar nem refazer a aposta. Desligada por padrão.
 async function getLockVotes() {
   const { rows } = await q("select value from settings where key = 'lock_votes'");
@@ -1254,7 +1259,7 @@ app.post('/api/logout', wrap(async (req, res) => {
 
 app.get('/api/me', wrap(async (req, res) => {
   const u = await currentUser(req);
-  res.json({ user: u ? userView(u) : null });
+  res.json({ user: u ? userView(u) : null, chatEnabled: await getChatEnabled() });
 }));
 
 /* ---------- Notificações (Web Push) ---------- */
@@ -1321,7 +1326,7 @@ app.get('/api/polls', wrap(async (req, res) => {
   });
   // Saldo só é calculado quando há enquete com odd na página e a pessoa está logada
   const balance = u && polls.some((p) => p.odds) ? await availableBalance(u.id) : null;
-  res.json({ polls, topics: await fetchTopics(), lockVotes: await getLockVotes(), balance });
+  res.json({ polls, topics: await fetchTopics(), lockVotes: await getLockVotes(), balance, chatEnabled: await getChatEnabled() });
 }));
 
 /* Saldo para apostar = pontos do ranking geral − o que está apostado em enquetes ainda sem resultado */
@@ -1572,6 +1577,7 @@ app.get('/api/admin/polls', requireAdmin, wrap(async (req, res) => {
     notifyClosing: await getFlag('notify_closing'),
     hallVisible: await getFlag('hall_visible'),
     lockVotes: await getLockVotes(),
+    chatEnabled: await getChatEnabled(),
     pushEnabled: PUSH_ENABLED,
   });
 }));
@@ -2721,13 +2727,15 @@ app.post('/api/admin/settings', requirePerm('settings'), wrap(async (req, res) =
     hallVisible: 'hall_visible',
     notifyPrize: 'notify_prize',
     lockVotes: 'lock_votes',
+    chatEnabled: 'chat_enabled',
   };
   for (const [field, key] of Object.entries(flagFields)) {
     const v = req.body?.[field];
     if (v === undefined) continue;
     if (typeof v !== 'boolean') return res.status(400).json({ error: 'Valor inválido.' });
     entries.push([key, v ? '1' : '0']);
-    if (field === 'hallVisible' || field === 'lockVotes') rankingChanged = true; // avisa as páginas abertas
+    // hall/trava/chat: avisa as páginas abertas para esconder botão, trava, etc.
+    if (field === 'hallVisible' || field === 'lockVotes' || field === 'chatEnabled') rankingChanged = true;
   }
 
   if (mode !== undefined) {
@@ -2879,6 +2887,9 @@ async function canModerateChat(req) {
 }
 
 app.get('/api/chat', requireUser, wrap(async (req, res) => {
+  if (!(await getChatEnabled())) {
+    return res.status(503).json({ error: 'O chat está desativado no momento.', chatEnabled: false });
+  }
   const canMod = await canModerateChat(req);
   const mute = await getActiveMute(req.user.id);
   const { rows } = await q(
@@ -2908,6 +2919,9 @@ app.get('/api/chat', requireUser, wrap(async (req, res) => {
 }));
 
 app.post('/api/chat', requireUser, limit('chat', 30, 60 * 1000), wrap(async (req, res) => {
+  if (!(await getChatEnabled())) {
+    return res.status(503).json({ error: 'O chat está desativado no momento.', chatEnabled: false });
+  }
   const mute = await getActiveMute(req.user.id);
   if (mute) {
     const when = mute.until
