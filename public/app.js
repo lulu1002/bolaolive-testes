@@ -32,6 +32,7 @@
     chatEnabled: true,
     chatMedia: { images: true, videos: true, embedLinks: true },
     chatAttach: null, // { url, type }
+    nameColors: [],
   };
 
   /* ---------- Utilidades ---------- */
@@ -212,21 +213,100 @@
     return h('span', { class: `${cls} ph`, 'aria-hidden': 'true' }, (name || '?').slice(0, 1).toUpperCase());
   }
 
+
+  function nameColorStyle(color) {
+    return color ? { style: `color: ${color}` } : {};
+  }
+
   /* ---------- Cabeçalho ---------- */
   function renderWho() {
     const box = $('#who');
     box.replaceChildren();
     if (state.user) {
+      const color = state.user.nameColor || null;
+      const nameAttrs = { class: 'me-name', href: `#perfil/${state.user.id}` };
+      if (color) nameAttrs.style = `color: ${color}`;
       box.append(
         avatarEl(state.user.name, state.user.avatar),
-        h('a', { class: 'me-name', href: `#perfil/${state.user.id}` }, state.user.name),
+        h('a', nameAttrs, state.user.name),
         h('button', { class: 'btn ghost small', type: 'button', onclick: logout }, 'Sair')
       );
     } else {
       box.append(h('a', { class: 'btn twitch small', href: '/auth/twitch' }, 'Entrar com a Twitch'));
     }
     if (typeof updateChatFab === 'function') updateChatFab();
+    if (typeof updateIdentityFab === 'function') updateIdentityFab();
   }
+
+  function renderIdentityMenu() {
+    const box = $('#identity-swatches');
+    const menu = $('#identity-menu');
+    if (!box || !menu) return;
+    const color = state.user?.nameColor || null;
+    const colors = state.nameColors.length ? state.nameColors : [{ id: 'default', label: 'Padrão', value: null }];
+    box.replaceChildren(...colors.map((c) => {
+      const selected = (color || null) === (c.value || null);
+      const attrs = {
+        class: `identity-swatch${selected ? ' selected' : ''}`,
+        type: 'button',
+        title: c.label,
+        'data-color': c.id,
+        'aria-label': c.label,
+        onclick: (e) => {
+          e.stopPropagation();
+          setNameColor(c.value);
+        },
+      };
+      if (c.value) attrs.style = `background: ${c.value}`;
+      return h('button', attrs);
+    }));
+  }
+
+  function updateIdentityFab() {
+    const btn = $('#identity-toggle');
+    if (!btn) return;
+    btn.hidden = !state.user;
+    if (!state.user) {
+      const menu = $('#identity-menu');
+      if (menu) menu.hidden = true;
+    } else {
+      renderIdentityMenu();
+    }
+  }
+
+  function setupIdentityFab() {
+    const btn = $('#identity-toggle');
+    if (!btn) return;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!state.user) return;
+      const menu = $('#identity-menu');
+      if (!menu) return;
+      renderIdentityMenu();
+      menu.hidden = !menu.hidden;
+    });
+  }
+
+
+  async function setNameColor(value) {
+    try {
+      const data = await api('/api/me/name-color', {
+        method: 'POST',
+        body: { color: value == null ? 'default' : value },
+      });
+      if (data.user) state.user = data.user;
+      const menu = $('#identity-menu');
+      if (menu) menu.hidden = true;
+      renderWho();
+      updateIdentityFab();
+      if (state.chatOpen) renderChatMessages(false);
+      if (state.view === 'ranking') loadRanking();
+      toast('Cor do nome atualizada');
+    } catch (e) {
+      toast(e.message || 'Não foi possível salvar a cor.', true);
+    }
+  }
+
 
   async function logout() {
     try { await api('/api/logout', { method: 'POST' }); } catch (_) { /* segue */ }
@@ -641,7 +721,7 @@
             avatarEl(p.name, p.avatar, '', p.isHouse),
             h('span', {},
               h('span', { class: 'nm-row' },
-                h('a', { class: 'nm', href: `#perfil/${p.userId}` }, p.name + (me ? ' (você)' : ''))),
+                h('a', { class: 'nm', href: `#perfil/${p.userId}`, ...(p.nameColor ? { style: `color: ${p.nameColor}` } : {}) }, p.name + (me ? ' (você)' : ''))),
               h('span', { class: 'hits' }, `${p.hits} ${p.hits === 1 ? 'acerto' : 'acertos'} na semana`)),
             h('span', { class: 'score' }, h('b', {}, p.points), ' pts'));
         })));
@@ -683,7 +763,7 @@
         avatarEl(s.name, s.avatar, '', s.isHouse),
         h('span', {},
           h('span', { class: 'nm-row' },
-            h('a', { class: 'nm', href: `#perfil/${s.userId}` }, (s.isHouse ? ' ' : '') + s.name + (me ? ' (você)' : '')),
+            h('a', { class: 'nm', href: `#perfil/${s.userId}`, ...(s.nameColor ? { style: `color: ${s.nameColor}` } : {}) }, (s.isHouse ? ' ' : '') + s.name + (me ? ' (você)' : '')),
             badgesEl(s.badges, s.prizes)),
           h('span', { class: 'hits' }, s.isHouse ? 'Conta da casa' : hits)),
         h('span', { class: 'score' }, h('b', {}, s.points), ' pts'));
@@ -740,7 +820,7 @@
       h('div', { class: 'profile-head' },
         avatarEl(p.name, p.avatar, 'big', p.isHouse),
         h('div', {},
-          h('h2', {}, (p.isHouse ? '🏠 ' : '') + p.name + (me ? ' (você)' : '')),
+          h('h2', { ...(p.nameColor ? { style: `color: ${p.nameColor}` } : {}) }, (p.isHouse ? '🏠 ' : '') + p.name + (me ? ' (você)' : '')),
           p.isHouse
             ? h('span', { class: 'hits' }, 'Conta da casa — entra quando nenhuma opção bate')
             : h('a', { class: 'linkish', href: `https://www.twitch.tv/${encodeURIComponent(p.login)}`, target: '_blank', rel: 'noopener noreferrer' }, 'Canal na Twitch'))),
@@ -1017,7 +1097,10 @@
         av,
         h('div', { class: 'bubble' },
           h('div', { class: 'meta' },
-            h('span', { class: 'name' }, m.user?.name || 'Alguém'),
+            h('span', {
+              class: 'name',
+              ...(m.user?.nameColor ? { style: `color: ${m.user.nameColor}` } : {}),
+            }, m.user?.name || 'Alguém'),
             h('span', { class: 'time' }, fmtChatTime(m.createdAt))
           ),
           body,
@@ -1507,6 +1590,7 @@
     try {
       const me = await api('/api/me');
       state.user = me.user;
+      if (Array.isArray(me.nameColors)) state.nameColors = me.nameColors;
       if (me.chatEnabled !== undefined) state.chatEnabled = Boolean(me.chatEnabled);
       if (me.chatMedia) {
         state.chatMedia = {
@@ -1518,6 +1602,8 @@
     } catch (_) { /* segue como visitante */ }
     syncPushUser();
     renderWho();
+    setupIdentityFab();
+    updateIdentityFab();
     setupChat();
     updateChatFab();
     if (state.user && state.chatEnabled) loadChat(true);
@@ -1529,6 +1615,10 @@
     setInterval(() => { if (!document.hidden) refresh(); }, 60000);
     // Celulares pausam a conexão com a aba em segundo plano: atualiza ao voltar
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+    document.addEventListener('click', () => {
+      const menu = $('#identity-menu');
+      if (menu && !menu.hidden) menu.hidden = true;
+    });
   }
   init();
 })();

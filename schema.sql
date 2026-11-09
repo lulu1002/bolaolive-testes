@@ -392,3 +392,7 @@ alter table chat_messages add column if not exists media_type text;
 -- Permite mensagem só com mídia (body vazio)
 alter table chat_messages drop constraint if exists chat_messages_body_check;
 alter table chat_messages add constraint chat_messages_body_check check (char_length(body) <= 500);
+
+
+-- Cor do nome escolhida pelo usuário (identidade). Hex da paleta permitida no servidor.
+alter table users add column if not exists name_color text;

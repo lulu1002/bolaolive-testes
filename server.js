@@ -627,7 +627,7 @@ async function syncPrizes(list, openPrizes, removed, reachByUser) {
 async function computeStandings() {
   const { general: generalResetAt } = await getResetAts();
   const [users, results, rounds, rule, achDefs, titleRows, adjRows, prizeRows, removedRows] = await Promise.all([
-    q('select id, display_name, login, avatar_url, is_house, is_test from users where not banned'),
+    q('select id, display_name, login, avatar_url, is_house, is_test, name_color from users where not banned'),
     q(
       `select r.user_id, r.poll_title, r.chosen, r.correct, r.points, r.hit, r.at, r.gain, r.stake
        from (
@@ -667,6 +667,7 @@ async function computeStandings() {
     avatar: u.avatar_url,
     isHouse: u.is_house,
     isTest: u.is_test,
+    nameColor: normalizeNameColor(u.name_color),
     points: 0,
     hits: 0,
     played: 0,
@@ -787,7 +788,7 @@ async function computeStandings() {
 async function computeWeeklyStandings() {
   const { weekly: weeklyResetAt } = await getResetAts();
   const [users, totals, adj] = await Promise.all([
-    q('select id, display_name, login, avatar_url, is_house, is_test from users where not banned'),
+    q('select id, display_name, login, avatar_url, is_house, is_test, name_color from users where not banned'),
     q(
       `select r.user_id,
               coalesce(sum(r.gain), 0)::int as points,
@@ -819,6 +820,7 @@ async function computeWeeklyStandings() {
       avatar: u.avatar_url,
       isHouse: u.is_house,
       isTest: u.is_test,
+      nameColor: normalizeNameColor(u.name_color),
       points: (t ? t.points : 0) + (adjByUser.get(u.id) || 0),
       hits: t ? t.hits : 0,
       played: t ? t.played : 0,
@@ -1187,7 +1189,37 @@ const requireOwner = wrap(async (req, res, next) => {
   if (!req.admin.owner) return res.status(403).json({ error: 'Só o dono pode gerenciar admins.' });
   next();
 });
-const userView = (u) => ({ id: u.id, name: u.display_name, login: u.login, avatar: u.avatar_url });
+// Cores de nome permitidas (identidade). null = cor padrão do tema.
+const NAME_COLORS = [
+  { id: 'default', label: 'Padrão', value: null },
+  { id: 'red', label: 'Vermelho', value: '#E74C3C' },
+  { id: 'orange', label: 'Laranja', value: '#E67E22' },
+  { id: 'gold', label: 'Dourado', value: '#D4A017' },
+  { id: 'green', label: 'Verde', value: '#27AE60' },
+  { id: 'teal', label: 'Água', value: '#1ABC9C' },
+  { id: 'blue', label: 'Azul', value: '#3498DB' },
+  { id: 'purple', label: 'Roxo', value: '#9B59B6' },
+  { id: 'pink', label: 'Rosa', value: '#E91E63' },
+  { id: 'gray', label: 'Cinza', value: '#95A5A6' },
+];
+const NAME_COLOR_VALUES = new Set(NAME_COLORS.map((c) => c.value).filter(Boolean));
+function normalizeNameColor(v) {
+  if (v == null || v === '' || v === 'default') return null;
+  const s = String(v).trim().toUpperCase();
+  // aceita hex da paleta (case-insensitive)
+  for (const allowed of NAME_COLOR_VALUES) {
+    if (allowed.toUpperCase() === s) return allowed;
+  }
+  return null;
+}
+const userView = (u) => ({
+  id: u.id,
+  name: u.display_name,
+  login: u.login,
+  avatar: u.avatar_url,
+  nameColor: normalizeNameColor(u.name_color),
+});
+
 
 /* ---------- Saúde (Render) ---------- */
 app.get('/healthz', (req, res) => res.type('text').send('ok'));
@@ -1284,8 +1316,29 @@ app.post('/api/logout', wrap(async (req, res) => {
 app.get('/api/me', wrap(async (req, res) => {
   const u = await currentUser(req);
   const [chatEnabled, chatMedia] = await Promise.all([getChatEnabled(), getChatMediaFlags()]);
-  res.json({ user: u ? userView(u) : null, chatEnabled, chatMedia });
+  res.json({
+    user: u ? userView(u) : null,
+    chatEnabled,
+    chatMedia,
+    nameColors: NAME_COLORS,
+  });
 }));
+
+app.post('/api/me/name-color', requireUser, limit('name-color', 20, 60 * 1000), wrap(async (req, res) => {
+  const color = normalizeNameColor(req.body?.color);
+  // body.color pode ser null/'default' para resetar
+  const raw = req.body?.color;
+  const wantsDefault = raw === null || raw === '' || raw === 'default';
+  const value = wantsDefault ? null : color;
+  if (!wantsDefault && value == null) {
+    return res.status(400).json({ error: 'Cor inválida. Escolha uma da paleta.' });
+  }
+  await q('update users set name_color = $2 where id = $1', [req.user.id, value]);
+  const { rows } = await q('select * from users where id = $1', [req.user.id]);
+  broadcast(); // ranking e outros clientes atualizam a cor
+  res.json({ user: userView(rows[0]) });
+}));
+
 
 /* ---------- Notificações (Web Push) ---------- */
 app.get('/api/push/public-key', (req, res) => {
@@ -2905,6 +2958,7 @@ function chatMessageView(row, canModerate) {
       name: row.display_name,
       login: row.login,
       avatar: row.avatar_url,
+      nameColor: normalizeNameColor(row.name_color),
     },
   };
 }
@@ -2933,7 +2987,7 @@ app.get('/api/chat', requireUser, wrap(async (req, res) => {
   const mediaFlags = await getChatMediaFlags();
   const { rows } = await q(
     `select m.id, m.user_id, m.body, m.created_at, m.deleted_at, m.media_url, m.media_type,
-            u.display_name, u.login, u.avatar_url
+            u.display_name, u.login, u.avatar_url, u.name_color
      from (
        select id from chat_messages
        order by id desc
@@ -3010,6 +3064,7 @@ app.post('/api/chat', requireUser, limit('chat', 30, 60 * 1000), wrap(async (req
     display_name: req.user.display_name,
     login: req.user.login,
     avatar_url: req.user.avatar_url,
+    name_color: req.user.name_color,
   };
   const msg = chatMessageView(row, false);
   broadcastChat({ type: 'message', message: msg });
