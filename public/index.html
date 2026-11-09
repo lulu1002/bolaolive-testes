@@ -70,7 +70,12 @@
     </header>
     <div id="chat-messages" class="chat-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
     <div id="chat-muted" class="chat-muted" hidden></div>
+    <div id="chat-attach-bar" class="chat-attach-bar" hidden>
+      <div id="chat-attach-preview" class="chat-attach-preview"></div>
+      <button type="button" id="chat-attach-clear" class="chat-attach-clear" title="Remover anexo">✕</button>
+    </div>
     <form id="chat-form" class="chat-form" autocomplete="off">
+      <button type="button" id="chat-attach-btn" class="chat-attach-btn" title="Anexar imagem ou vídeo" hidden>📎</button>
       <input id="chat-input" type="text" maxlength="500" placeholder="Digite uma mensagem…" aria-label="Mensagem">
       <button type="submit" class="chat-send" title="Enviar">➤</button>
     </form>

@@ -346,6 +346,30 @@ const GAIN_SQL = `case
 async function getChatEnabled() {
   return getFlag('chat_enabled');
 }
+// Mídia no chat: imagens, vídeos e auto-embed de links de imagem (png/jpeg…). Ligados por padrão.
+async function getChatMediaFlags() {
+  const [images, videos, embedLinks] = await Promise.all([
+    getFlag('chat_images'),
+    getFlag('chat_videos'),
+    getFlag('chat_embed_links'),
+  ]);
+  return { images, videos, embedLinks };
+}
+function parseChatMediaUrl(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  let u;
+  try { u = new URL(s); } catch (_) { return { error: 'URL de mídia inválida.' }; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return { error: 'A mídia precisa ser um link http ou https.' };
+  if (s.length > 2000) return { error: 'URL de mídia muito longa.' };
+  return { url: s };
+}
+function guessMediaType(url) {
+  const path = String(url).split('?')[0].split('#')[0].toLowerCase();
+  if (/\.(png|jpe?g|gif|webp|avif)$/i.test(path)) return 'image';
+  if (/\.(mp4|webm|ogg|mov)$/i.test(path)) return 'video';
+  return null;
+}
 
 // Trava de voto: ligada, quem já votou numa enquete não pode trocar nem refazer a aposta. Desligada por padrão.
 async function getLockVotes() {
@@ -1259,7 +1283,8 @@ app.post('/api/logout', wrap(async (req, res) => {
 
 app.get('/api/me', wrap(async (req, res) => {
   const u = await currentUser(req);
-  res.json({ user: u ? userView(u) : null, chatEnabled: await getChatEnabled() });
+  const [chatEnabled, chatMedia] = await Promise.all([getChatEnabled(), getChatMediaFlags()]);
+  res.json({ user: u ? userView(u) : null, chatEnabled, chatMedia });
 }));
 
 /* ---------- Notificações (Web Push) ---------- */
@@ -1326,7 +1351,8 @@ app.get('/api/polls', wrap(async (req, res) => {
   });
   // Saldo só é calculado quando há enquete com odd na página e a pessoa está logada
   const balance = u && polls.some((p) => p.odds) ? await availableBalance(u.id) : null;
-  res.json({ polls, topics: await fetchTopics(), lockVotes: await getLockVotes(), balance, chatEnabled: await getChatEnabled() });
+  const [chatEnabled, chatMedia] = await Promise.all([getChatEnabled(), getChatMediaFlags()]);
+  res.json({ polls, topics: await fetchTopics(), lockVotes: await getLockVotes(), balance, chatEnabled, chatMedia });
 }));
 
 /* Saldo para apostar = pontos do ranking geral − o que está apostado em enquetes ainda sem resultado */
@@ -1578,6 +1604,9 @@ app.get('/api/admin/polls', requireAdmin, wrap(async (req, res) => {
     hallVisible: await getFlag('hall_visible'),
     lockVotes: await getLockVotes(),
     chatEnabled: await getChatEnabled(),
+    chatImages: (await getChatMediaFlags()).images,
+    chatVideos: (await getChatMediaFlags()).videos,
+    chatEmbedLinks: (await getChatMediaFlags()).embedLinks,
     pushEnabled: PUSH_ENABLED,
   });
 }));
@@ -2728,6 +2757,9 @@ app.post('/api/admin/settings', requirePerm('settings'), wrap(async (req, res) =
     notifyPrize: 'notify_prize',
     lockVotes: 'lock_votes',
     chatEnabled: 'chat_enabled',
+    chatImages: 'chat_images',
+    chatVideos: 'chat_videos',
+    chatEmbedLinks: 'chat_embed_links',
   };
   for (const [field, key] of Object.entries(flagFields)) {
     const v = req.body?.[field];
@@ -2735,7 +2767,8 @@ app.post('/api/admin/settings', requirePerm('settings'), wrap(async (req, res) =
     if (typeof v !== 'boolean') return res.status(400).json({ error: 'Valor inválido.' });
     entries.push([key, v ? '1' : '0']);
     // hall/trava/chat: avisa as páginas abertas para esconder botão, trava, etc.
-    if (field === 'hallVisible' || field === 'lockVotes' || field === 'chatEnabled') rankingChanged = true;
+    if (field === 'hallVisible' || field === 'lockVotes' || field === 'chatEnabled'
+      || field === 'chatImages' || field === 'chatVideos' || field === 'chatEmbedLinks') rankingChanged = true;
   }
 
   if (mode !== undefined) {
@@ -2857,11 +2890,16 @@ const CHAT_HISTORY = 100;
 
 function chatMessageView(row, canModerate) {
   const deleted = Boolean(row.deleted_at);
+  const mediaUrl = row.media_url || null;
+  const mediaType = row.media_type || null;
   return {
     id: Number(row.id),
     body: deleted && !canModerate ? null : row.body,
     deleted,
     createdAt: iso(row.created_at),
+    media: (!deleted || canModerate) && mediaUrl && mediaType
+      ? { url: mediaUrl, type: mediaType }
+      : null,
     user: {
       id: row.user_id,
       name: row.display_name,
@@ -2892,8 +2930,9 @@ app.get('/api/chat', requireUser, wrap(async (req, res) => {
   }
   const canMod = await canModerateChat(req);
   const mute = await getActiveMute(req.user.id);
+  const mediaFlags = await getChatMediaFlags();
   const { rows } = await q(
-    `select m.id, m.user_id, m.body, m.created_at, m.deleted_at,
+    `select m.id, m.user_id, m.body, m.created_at, m.deleted_at, m.media_url, m.media_type,
             u.display_name, u.login, u.avatar_url
      from (
        select id from chat_messages
@@ -2908,6 +2947,7 @@ app.get('/api/chat', requireUser, wrap(async (req, res) => {
   res.json({
     messages: rows.map((r) => chatMessageView(r, canMod)),
     canModerate: canMod,
+    media: mediaFlags,
     muted: mute
       ? {
           reason: mute.reason || null,
@@ -2932,15 +2972,37 @@ app.post('/api/chat', requireUser, limit('chat', 30, 60 * 1000), wrap(async (req
     });
   }
   const body = String(req.body?.body || '').trim().replace(/\s+/g, ' ');
-  if (!body) return res.status(400).json({ error: 'Mensagem vazia.' });
   if (body.length > CHAT_MAX_BODY) {
     return res.status(400).json({ error: `Mensagem muito longa (máx. ${CHAT_MAX_BODY} caracteres).` });
   }
+  const mediaFlags = await getChatMediaFlags();
+  let mediaUrl = null;
+  let mediaType = null;
+  const mediaRaw = req.body?.mediaUrl;
+  const mediaTypeRaw = String(req.body?.mediaType || '').toLowerCase();
+  if (mediaRaw) {
+    const parsed = parseChatMediaUrl(mediaRaw);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    mediaType = mediaTypeRaw === 'image' || mediaTypeRaw === 'video'
+      ? mediaTypeRaw
+      : guessMediaType(parsed.url);
+    if (mediaType !== 'image' && mediaType !== 'video') {
+      return res.status(400).json({ error: 'Tipo de mídia inválido. Use image ou video.' });
+    }
+    if (mediaType === 'image' && !mediaFlags.images) {
+      return res.status(403).json({ error: 'Anexos de imagem estão desativados.' });
+    }
+    if (mediaType === 'video' && !mediaFlags.videos) {
+      return res.status(403).json({ error: 'Anexos de vídeo estão desativados.' });
+    }
+    mediaUrl = parsed.url;
+  }
+  if (!body && !mediaUrl) return res.status(400).json({ error: 'Mensagem vazia.' });
   const { rows } = await q(
-    `insert into chat_messages (user_id, body)
-     values ($1, $2)
-     returning id, user_id, body, created_at, deleted_at`,
-    [req.user.id, body]
+    `insert into chat_messages (user_id, body, media_url, media_type)
+     values ($1, $2, $3, $4)
+     returning id, user_id, body, created_at, deleted_at, media_url, media_type`,
+    [req.user.id, body || '', mediaUrl, mediaType]
   );
   const row = {
     ...rows[0],
@@ -3033,7 +3095,7 @@ app.get('/api/admin/chat/mutes', requirePerm('chat'), wrap(async (req, res) => {
 // Últimas mensagens do chat (incluindo apagadas) para moderação no painel
 app.get('/api/admin/chat/messages', requirePerm('chat'), wrap(async (req, res) => {
   const { rows } = await q(
-    `select m.id, m.user_id, m.body, m.created_at, m.deleted_at,
+    `select m.id, m.user_id, m.body, m.created_at, m.deleted_at, m.media_url, m.media_type,
             u.display_name, u.login, u.avatar_url
      from (
        select id from chat_messages order by id desc limit $1
@@ -3049,6 +3111,7 @@ app.get('/api/admin/chat/messages', requirePerm('chat'), wrap(async (req, res) =
       body: r.body,
       deleted: Boolean(r.deleted_at),
       createdAt: iso(r.created_at),
+      media: r.media_url && r.media_type ? { url: r.media_url, type: r.media_type } : null,
       user: {
         id: r.user_id,
         name: r.display_name,

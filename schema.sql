@@ -382,3 +382,8 @@ create table if not exists chat_mutes (
 
 alter table chat_messages enable row level security;
 alter table chat_mutes    enable row level security;
+
+
+-- Anexos de mídia no chat (URL http/https). media_type: image | video
+alter table chat_messages add column if not exists media_url text;
+alter table chat_messages add column if not exists media_type text;

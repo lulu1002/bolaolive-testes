@@ -30,6 +30,8 @@
     chatUnread: 0,
     chatSending: false,
     chatEnabled: true,
+    chatMedia: { images: true, videos: true, embedLinks: true },
+    chatAttach: null, // { url, type }
   };
 
   /* ---------- Utilidades ---------- */
@@ -252,6 +254,14 @@
       if (data.chatEnabled !== undefined) {
         state.chatEnabled = Boolean(data.chatEnabled);
         updateChatFab();
+      }
+      if (data.chatMedia) {
+        state.chatMedia = {
+          images: data.chatMedia.images !== false,
+          videos: data.chatMedia.videos !== false,
+          embedLinks: data.chatMedia.embedLinks !== false,
+        };
+        updateChatAttachUi();
       }
       state.pollsError = null;
     } catch (e) {
@@ -948,10 +958,12 @@
     const mutedBox = $('#chat-muted');
     const input = $('#chat-input');
     const btn = form?.querySelector('button[type=submit]');
+    const attachBar = $('#chat-attach-bar');
     if (!form || !input) return;
     const muted = state.chatMuted;
     if (muted) {
       form.hidden = true;
+      if (attachBar) attachBar.hidden = true;
       if (mutedBox) {
         mutedBox.hidden = false;
         const until = muted.permanent
@@ -966,7 +978,9 @@
       if (mutedBox) mutedBox.hidden = true;
       input.disabled = state.chatSending;
       if (btn) btn.disabled = state.chatSending;
+      if (attachBar && state.chatAttach) attachBar.hidden = false;
     }
+    if (typeof updateChatAttachUi === 'function') updateChatAttachUi();
   }
 
   function renderChatMessages(forceScroll) {
@@ -986,7 +1000,8 @@
         : h('div', { class: 'av ph' }, chatInitials(m.user?.name));
       const body = m.deleted
         ? h('div', { class: 'text' }, 'Mensagem removida pela moderação')
-        : h('div', { class: 'text' }, m.body || '');
+        : renderChatText(m.body || '');
+      const media = (!m.deleted && m.media && m.media.url) ? renderChatMedia(m.media) : null;
       const mod = [];
       if (state.chatCanModerate && !m.deleted) {
         mod.push(
@@ -1006,6 +1021,7 @@
             h('span', { class: 'time' }, fmtChatTime(m.createdAt))
           ),
           body,
+          media,
           ...mod
         )
       );
@@ -1020,8 +1036,16 @@
       state.chatMessages = data.messages || [];
       state.chatCanModerate = Boolean(data.canModerate);
       state.chatMuted = data.muted || null;
+      if (data.media) {
+        state.chatMedia = {
+          images: data.media.images !== false,
+          videos: data.media.videos !== false,
+          embedLinks: data.media.embedLinks !== false,
+        };
+      }
       state.chatLoaded = true;
       updateChatForm();
+      updateChatAttachUi();
       if (state.chatOpen) renderChatMessages(true);
     } catch (e) {
       // chat desligado no servidor
@@ -1068,13 +1092,19 @@
     if (!state.user || state.chatSending || state.chatMuted) return;
     const input = $('#chat-input');
     const body = (input?.value || '').trim();
-    if (!body) return;
+    const attach = state.chatAttach;
+    if (!body && !attach) return;
     state.chatSending = true;
     updateChatForm();
     try {
-      const data = await api('/api/chat', { method: 'POST', body: { body } });
+      const payload = { body };
+      if (attach) {
+        payload.mediaUrl = attach.url;
+        payload.mediaType = attach.type;
+      }
+      const data = await api('/api/chat', { method: 'POST', body: payload });
       if (input) input.value = '';
-      // a mensagem também chega via SSE; se não chegar, inclui localmente
+      clearChatAttach();
       if (data.message && !state.chatMessages.some((m) => m.id === data.message.id)) {
         state.chatMessages.push(data.message);
         if (state.chatMessages.length > 100) state.chatMessages = state.chatMessages.slice(-100);
@@ -1084,7 +1114,6 @@
       }
     } catch (e) {
       toast(e.message || 'Não foi possível enviar.', true);
-      // se foi silenciado no meio do caminho
       if (String(e.message || '').includes('silenciado')) loadChat(true);
     } finally {
       state.chatSending = false;
@@ -1156,6 +1185,143 @@
     document.body.append(pop);
   }
 
+
+  function isImageLink(url) {
+    try {
+      const u = new URL(url);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+      return /\.(png|jpe?g|gif|webp|avif)(\?.*)?$/i.test(u.pathname);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function renderChatText(text) {
+    const wrap = h('div', { class: 'text' });
+    if (!text) return wrap;
+    const embed = state.chatMedia?.embedLinks !== false;
+    // Quebra por URLs http(s)
+    const re = /(https?:\/\/[^\s<]+)/g;
+    let last = 0;
+    let m;
+    while ((m = re.exec(text))) {
+      if (m.index > last) wrap.append(document.createTextNode(text.slice(last, m.index)));
+      const url = m[1].replace(/[.,);]+$/, ''); // tira pontuação final comum
+      const trailing = m[1].slice(url.length);
+      if (embed && isImageLink(url)) {
+        wrap.append(
+          h('a', { class: 'chat-link', href: url, target: '_blank', rel: 'noopener noreferrer' }, url),
+          h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' },
+            h('img', { class: 'embed-img', src: url, alt: 'imagem', loading: 'lazy', referrerpolicy: 'no-referrer' })
+          )
+        );
+      } else {
+        wrap.append(h('a', { class: 'chat-link', href: url, target: '_blank', rel: 'noopener noreferrer' }, url));
+      }
+      if (trailing) wrap.append(document.createTextNode(trailing));
+      last = m.index + m[1].length;
+    }
+    if (last < text.length) wrap.append(document.createTextNode(text.slice(last)));
+    return wrap;
+  }
+
+  function renderChatMedia(media) {
+    if (!media?.url) return null;
+    if (media.type === 'video') {
+      return h('div', { class: 'media' },
+        h('video', { src: media.url, controls: true, preload: 'metadata', playsinline: true })
+      );
+    }
+    return h('div', { class: 'media' },
+      h('a', { href: media.url, target: '_blank', rel: 'noopener noreferrer' },
+        h('img', { src: media.url, alt: 'anexo', loading: 'lazy', referrerpolicy: 'no-referrer' })
+      )
+    );
+  }
+
+  function guessAttachType(url) {
+    try {
+      const path = new URL(url).pathname.toLowerCase();
+      if (/\.(png|jpe?g|gif|webp|avif)$/i.test(path)) return 'image';
+      if (/\.(mp4|webm|ogg|mov)$/i.test(path)) return 'video';
+    } catch (_) { /* ignore */ }
+    return null;
+  }
+
+  function clearChatAttach() {
+    state.chatAttach = null;
+    const bar = $('#chat-attach-bar');
+    const prev = $('#chat-attach-preview');
+    if (bar) bar.hidden = true;
+    if (prev) prev.replaceChildren();
+  }
+
+  function setChatAttach(url, type) {
+    state.chatAttach = { url, type };
+    const bar = $('#chat-attach-bar');
+    const prev = $('#chat-attach-preview');
+    if (!bar || !prev) return;
+    bar.hidden = false;
+    prev.replaceChildren();
+    if (type === 'video') {
+      prev.append(h('video', { src: url, preload: 'metadata' }), document.createTextNode(url));
+    } else {
+      prev.append(h('img', { src: url, alt: '' }), document.createTextNode(url));
+    }
+  }
+
+  function updateChatAttachUi() {
+    const btn = $('#chat-attach-btn');
+    if (!btn) return;
+    const allow = Boolean(state.chatMedia?.images || state.chatMedia?.videos);
+    btn.hidden = !allow || !state.user || !state.chatEnabled || Boolean(state.chatMuted);
+    if (!allow) clearChatAttach();
+  }
+
+  function promptChatAttach() {
+    const allowImg = state.chatMedia?.images !== false;
+    const allowVid = state.chatMedia?.videos !== false;
+    if (!allowImg && !allowVid) {
+      toast('Anexos de mídia estão desativados.', true);
+      return;
+    }
+    const hint = [
+      allowImg ? 'imagem (png, jpg…)' : null,
+      allowVid ? 'vídeo (mp4, webm…)' : null,
+    ].filter(Boolean).join(' ou ');
+    const url = prompt(`Cole o link da ${hint}:`);
+    if (url == null) return;
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    let type = guessAttachType(trimmed);
+    if (!type) {
+      // pergunta ao usuário
+      if (allowImg && allowVid) {
+        const t = prompt('É imagem ou vídeo? (image / video)', 'image');
+        if (t == null) return;
+        type = String(t).toLowerCase().startsWith('v') ? 'video' : 'image';
+      } else {
+        type = allowVid ? 'video' : 'image';
+      }
+    }
+    if (type === 'image' && !allowImg) {
+      toast('Anexos de imagem estão desativados.', true);
+      return;
+    }
+    if (type === 'video' && !allowVid) {
+      toast('Anexos de vídeo estão desativados.', true);
+      return;
+    }
+    try {
+      const u = new URL(trimmed);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('bad');
+    } catch (_) {
+      toast('URL inválida. Use um link http ou https.', true);
+      return;
+    }
+    setChatAttach(trimmed, type);
+  }
+
   function setupChat() {
     const fab = $('#chat-toggle');
     const close = $('#chat-close');
@@ -1170,10 +1336,15 @@
     if (close) close.addEventListener('click', () => setChatOpen(false));
     if (back) back.addEventListener('click', () => setChatOpen(false));
     if (form) form.addEventListener('submit', sendChatMessage);
+    const attachBtn = $('#chat-attach-btn');
+    if (attachBtn) attachBtn.addEventListener('click', promptChatAttach);
+    const attachClear = $('#chat-attach-clear');
+    if (attachClear) attachClear.addEventListener('click', clearChatAttach);
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && state.chatOpen) setChatOpen(false);
     });
     updateChatFab();
+    updateChatAttachUi();
   }
 
 
@@ -1185,6 +1356,13 @@
       const me = await api('/api/me');
       state.user = me.user;
       if (me.chatEnabled !== undefined) state.chatEnabled = Boolean(me.chatEnabled);
+      if (me.chatMedia) {
+        state.chatMedia = {
+          images: me.chatMedia.images !== false,
+          videos: me.chatMedia.videos !== false,
+          embedLinks: me.chatMedia.embedLinks !== false,
+        };
+      }
     } catch (_) { /* segue como visitante */ }
     syncPushUser();
     renderWho();

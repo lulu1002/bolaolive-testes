@@ -2,7 +2,7 @@
   'use strict';
 
   const $ = (sel, root = document) => root.querySelector(sel);
-  const state = { notifyPrize: true, prizes: [], prizeEditing: null, adminUsers: [], polls: [], topics: [], topicTab: null, users: 0, editing: null, mode: 'replace', streak: { every: 0, bonus: 0 }, notify: true, notifyResult: true, notifyClosing: true, hallVisible: true, lockVotes: false, chatEnabled: true, hall: [], pushEnabled: true, house: [], houseEditing: null, achievements: [], achEditing: null };
+  const state = { notifyPrize: true, prizes: [], prizeEditing: null, adminUsers: [], polls: [], topics: [], topicTab: null, users: 0, editing: null, mode: 'replace', streak: { every: 0, bonus: 0 }, notify: true, notifyResult: true, notifyClosing: true, hallVisible: true, lockVotes: false, chatEnabled: true, chatImages: true, chatVideos: true, chatEmbedLinks: true, hall: [], pushEnabled: true, house: [], houseEditing: null, achievements: [], achEditing: null };
 
   /* ---------- Utilidades ---------- */
   function h(tag, attrs = {}, ...children) {
@@ -171,8 +171,17 @@
       state.lockVotes = data.lockVotes;
       $('#lock-votes').checked = state.lockVotes;
       state.chatEnabled = data.chatEnabled !== false;
+      state.chatImages = data.chatImages !== false;
+      state.chatVideos = data.chatVideos !== false;
+      state.chatEmbedLinks = data.chatEmbedLinks !== false;
       const chatCb = $('#chat-enabled');
       if (chatCb) chatCb.checked = state.chatEnabled;
+      const imgCb = $('#chat-images');
+      if (imgCb) imgCb.checked = state.chatImages;
+      const vidCb = $('#chat-videos');
+      if (vidCb) vidCb.checked = state.chatVideos;
+      const embCb = $('#chat-embed-links');
+      if (embCb) embCb.checked = state.chatEmbedLinks;
       state.pushEnabled = data.pushEnabled;
       renderMode();
       renderNotify();
@@ -932,6 +941,9 @@
   }
   bindFlag('#lock-votes', 'lockVotes', 'lockVotes', 'Trava de voto ligada: não dá mais para trocar o voto', 'Trava de voto desligada', () => {});
   bindFlag('#chat-enabled', 'chatEnabled', 'chatEnabled', 'Chat ligado no site principal', 'Chat desligado no site principal', () => {});
+  bindFlag('#chat-images', 'chatImages', 'chatImages', 'Anexos de imagem ligados', 'Anexos de imagem desligados', () => {});
+  bindFlag('#chat-videos', 'chatVideos', 'chatVideos', 'Anexos de vídeo ligados', 'Anexos de vídeo desligados', () => {});
+  bindFlag('#chat-embed-links', 'chatEmbedLinks', 'chatEmbedLinks', 'Preview de links de imagem ligado', 'Preview de links de imagem desligado', () => {});
 
   /* ---------- Aba Chat (config + moderação) ---------- */
   const chatAdmin = { mutes: [], messages: [], loaded: false };
@@ -985,6 +997,12 @@
       const body = m.deleted
         ? h('small', { class: 'hint' }, 'Mensagem removida pela moderação')
         : h('span', {}, m.body || '');
+      const mediaEl = (!m.deleted && m.media && m.media.url)
+        ? (m.media.type === 'video'
+            ? h('video', { class: 'chat-admin-media', src: m.media.url, controls: true, preload: 'metadata' })
+            : h('a', { href: m.media.url, target: '_blank', rel: 'noopener noreferrer' },
+                h('img', { class: 'chat-admin-media', src: m.media.url, alt: 'anexo' })))
+        : null;
       return h('div', { class: 'house-row', style: m.deleted ? 'opacity:0.65' : '' },
         u.avatar
           ? h('img', { class: 'ach-thumb', src: u.avatar, alt: '', referrerpolicy: 'no-referrer' })
@@ -992,7 +1010,8 @@
         h('span', { class: 'nm' },
           `${u.name || 'Alguém'}`,
           h('small', { class: 'hint' }, fmtChatWhen(m.createdAt)),
-          h('div', { style: 'font-weight:500;margin-top:0.15rem;word-break:break-word' }, body)
+          h('div', { style: 'font-weight:500;margin-top:0.15rem;word-break:break-word' }, body),
+          mediaEl
         ),
         m.deleted ? null : h('div', { style: 'display:flex;flex-direction:column;gap:0.3rem' },
           h('button', {
@@ -1011,6 +1030,12 @@
   async function loadChatAdmin() {
     const cb = $('#chat-enabled');
     if (cb) cb.checked = state.chatEnabled !== false;
+    const imgCb = $('#chat-images');
+    if (imgCb) imgCb.checked = state.chatImages !== false;
+    const vidCb = $('#chat-videos');
+    if (vidCb) vidCb.checked = state.chatVideos !== false;
+    const embCb = $('#chat-embed-links');
+    if (embCb) embCb.checked = state.chatEmbedLinks !== false;
     // Config (toggle) pode ser lida por quem tem settings; moderação exige chat
     if (can('chat') || me.owner) {
       try {
