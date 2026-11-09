@@ -54,6 +54,7 @@
         <button type="button" role="tab" id="atab-prizes" aria-controls="apane-prizes" aria-selected="false">🏅 Prêmio</button>
         <button type="button" role="tab" id="atab-hall" aria-controls="apane-hall" aria-selected="false">🏆pódio semanal</button>
         <button type="button" role="tab" id="atab-users" aria-controls="apane-users" aria-selected="false">👥 Os meliantes </button>
+        <button type="button" role="tab" id="atab-chat" data-perm="chat|settings" aria-controls="apane-chat" aria-selected="false">💬 Chat</button>
         <button type="button" role="tab" id="atab-tests" data-perm="tests" aria-controls="apane-tests" aria-selected="false">🧪 Testes</button>
         <button type="button" role="tab" id="atab-admins" aria-controls="apane-admins" aria-selected="false" data-perm="owner">🔑 Admins</button>
         <button type="button" role="tab" id="atab-bot" aria-controls="apane-bot" aria-selected="false">🤖 Bot</button>
@@ -74,11 +75,6 @@
             <legend>Trava de voto</legend>
             <label class="aopt"><input type="checkbox" id="lock-votes"><span>🔒 Não deixar o participante trocar o voto: votou, está votado</span></label>
             <span class="hint">Vale para todas as enquetes (normais e com odd), inclusive as que já têm votos. Desligado, dá para trocar o voto até a votação encerrar.</span>
-          </fieldset>
-          <fieldset class="modes" data-need="settings">
-            <legend>Chat</legend>
-            <label class="aopt"><input type="checkbox" id="chat-enabled"><span>💬 Chat no site principal</span></label>
-            <span class="hint">Desligado, o botão do chat some para todo mundo e ninguém consegue enviar mensagem. Mensagens antigas ficam guardadas.</span>
           </fieldset>
           <fieldset class="modes" data-need="settings">
             <legend>Notificações</legend>
@@ -336,6 +332,32 @@
           <input id="user-search" data-keep type="search" placeholder="Nome ou login" autocomplete="off">
         </div>
         <div id="user-list" class="ach-admin-list"></div>
+      </section>
+      </div>
+
+      <div id="apane-chat" data-need="chat|settings" role="tabpanel" aria-labelledby="atab-chat" hidden>
+      <section class="panel" id="chat-panel">
+        <h2>💬 Chat</h2>
+        <p class="hint">Liga/desliga o chat no site, silencia participantes e apaga mensagens.</p>
+
+        <fieldset class="modes" data-need="settings">
+          <legend>Disponibilidade</legend>
+          <label class="aopt"><input type="checkbox" id="chat-enabled"><span>💬 Chat no site principal</span></label>
+          <span class="hint">Desligado, o botão some para todo mundo e ninguém envia mensagem. O histórico fica guardado.</span>
+        </fieldset>
+
+        <div data-need="chat">
+          <h3 class="section-title" style="margin-top:1.25rem">Silenciados</h3>
+          <p class="hint">Quem está impedido de escrever no chat agora.</p>
+          <div id="chat-mute-list" class="ach-admin-list"></div>
+
+          <h3 class="section-title" style="margin-top:1.5rem">Mensagens recentes</h3>
+          <p class="hint">Últimas 100 mensagens. Apagadas continuam na lista marcadas como removidas.</p>
+          <div class="actions" style="margin:0.5rem 0 0.75rem">
+            <button class="btn ghost small" id="chat-refresh" type="button" data-keep>Atualizar</button>
+          </div>
+          <div id="chat-msg-list" class="ach-admin-list"></div>
+        </div>
       </section>
       </div>
 

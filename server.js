@@ -3030,6 +3030,35 @@ app.get('/api/admin/chat/mutes', requirePerm('chat'), wrap(async (req, res) => {
   });
 }));
 
+// Últimas mensagens do chat (incluindo apagadas) para moderação no painel
+app.get('/api/admin/chat/messages', requirePerm('chat'), wrap(async (req, res) => {
+  const { rows } = await q(
+    `select m.id, m.user_id, m.body, m.created_at, m.deleted_at,
+            u.display_name, u.login, u.avatar_url
+     from (
+       select id from chat_messages order by id desc limit $1
+     ) last
+     join chat_messages m on m.id = last.id
+     join users u on u.id = m.user_id
+     order by m.id desc`,
+    [CHAT_HISTORY]
+  );
+  res.json({
+    messages: rows.map((r) => ({
+      id: Number(r.id),
+      body: r.body,
+      deleted: Boolean(r.deleted_at),
+      createdAt: iso(r.created_at),
+      user: {
+        id: r.user_id,
+        name: r.display_name,
+        login: r.login,
+        avatar: r.avatar_url,
+      },
+    })),
+  });
+}));
+
 /* ---------- Páginas e arquivos estáticos ---------- */
 // A página e o script do admin ficam fora de /public: só existem sob o endereço secreto.
 const ADMIN_HTML = fs

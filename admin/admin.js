@@ -77,7 +77,7 @@
     $('#admin-pass').focus();
   }
 
-  const ADMIN_TABS = ['create', 'polls', 'house', 'streak', 'ach', 'prizes', 'hall', 'users', 'tests', 'admins', 'bot', 'log', 'backup'];
+  const ADMIN_TABS = ['create', 'polls', 'house', 'streak', 'ach', 'prizes', 'hall', 'users', 'chat', 'tests', 'admins', 'bot', 'log', 'backup'];
 
   // Nível de acesso de quem está logado (vem de /api/admin/me). O servidor confere tudo de novo; aqui só se esconde o que não vale.
   let me = { owner: false, permissions: [], name: '' };
@@ -119,6 +119,7 @@
     // Estas abas carregam só quando abertas (a lista de usuários é a mais pesada)
     if (tab === 'prizes') loadPrizes();
     if (tab === 'users') loadUsers();
+    if (tab === 'chat') loadChatAdmin();
     if (tab === 'tests') loadTests();
     if (tab === 'admins') loadAdmins();
     if (tab === 'log') loadLog(true);
@@ -931,6 +932,163 @@
   }
   bindFlag('#lock-votes', 'lockVotes', 'lockVotes', 'Trava de voto ligada: não dá mais para trocar o voto', 'Trava de voto desligada', () => {});
   bindFlag('#chat-enabled', 'chatEnabled', 'chatEnabled', 'Chat ligado no site principal', 'Chat desligado no site principal', () => {});
+
+  /* ---------- Aba Chat (config + moderação) ---------- */
+  const chatAdmin = { mutes: [], messages: [], loaded: false };
+
+  function fmtChatWhen(isoStr) {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  }
+
+  function renderChatMutes() {
+    const box = $('#chat-mute-list');
+    if (!box) return;
+    box.replaceChildren();
+    if (!chatAdmin.mutes.length) {
+      box.append(h('p', { class: 'hint' }, 'Ninguém silenciado no momento.'));
+      return;
+    }
+    box.append(...chatAdmin.mutes.map((m) => {
+      const until = m.permanent
+        ? 'Permanente'
+        : (m.until ? `Até ${fmtChatWhen(m.until)}` : '');
+      const reason = m.reason ? ` · ${m.reason}` : '';
+      return h('div', { class: 'house-row' },
+        m.avatar
+          ? h('img', { class: 'ach-thumb', src: m.avatar, alt: '', referrerpolicy: 'no-referrer' })
+          : h('span', { class: 'ach-thumb ph' }, (m.name || '?').slice(0, 1).toUpperCase()),
+        h('span', { class: 'nm' },
+          `${m.name} (@${m.login})`,
+          h('small', { class: 'hint' }, `${until}${reason}`)
+        ),
+        h('button', {
+          class: 'btn small', type: 'button',
+          onclick: () => unmuteChatUser(m),
+        }, 'Tirar silêncio')
+      );
+    }));
+  }
+
+  function renderChatMessages() {
+    const box = $('#chat-msg-list');
+    if (!box) return;
+    box.replaceChildren();
+    if (!chatAdmin.messages.length) {
+      box.append(h('p', { class: 'hint' }, 'Nenhuma mensagem ainda.'));
+      return;
+    }
+    box.append(...chatAdmin.messages.map((m) => {
+      const u = m.user || {};
+      const body = m.deleted
+        ? h('small', { class: 'hint' }, 'Mensagem removida pela moderação')
+        : h('span', {}, m.body || '');
+      return h('div', { class: 'house-row', style: m.deleted ? 'opacity:0.65' : '' },
+        u.avatar
+          ? h('img', { class: 'ach-thumb', src: u.avatar, alt: '', referrerpolicy: 'no-referrer' })
+          : h('span', { class: 'ach-thumb ph' }, (u.name || '?').slice(0, 1).toUpperCase()),
+        h('span', { class: 'nm' },
+          `${u.name || 'Alguém'}`,
+          h('small', { class: 'hint' }, fmtChatWhen(m.createdAt)),
+          h('div', { style: 'font-weight:500;margin-top:0.15rem;word-break:break-word' }, body)
+        ),
+        m.deleted ? null : h('div', { style: 'display:flex;flex-direction:column;gap:0.3rem' },
+          h('button', {
+            class: 'btn danger small', type: 'button',
+            onclick: () => deleteChatAdminMsg(m),
+          }, 'Apagar'),
+          u.id ? h('button', {
+            class: 'btn ghost small', type: 'button',
+            onclick: () => muteChatUser(u),
+          }, 'Silenciar') : null
+        )
+      );
+    }));
+  }
+
+  async function loadChatAdmin() {
+    const cb = $('#chat-enabled');
+    if (cb) cb.checked = state.chatEnabled !== false;
+    // Config (toggle) pode ser lida por quem tem settings; moderação exige chat
+    if (can('chat') || me.owner) {
+      try {
+        const [mutesRes, msgsRes] = await Promise.all([
+          api('/api/admin/chat/mutes'),
+          api('/api/admin/chat/messages'),
+        ]);
+        chatAdmin.mutes = mutesRes.mutes || [];
+        chatAdmin.messages = msgsRes.messages || [];
+        chatAdmin.loaded = true;
+        renderChatMutes();
+        renderChatMessages();
+      } catch (e) {
+        handleError(e);
+      }
+    } else {
+      const muteBox = $('#chat-mute-list');
+      const msgBox = $('#chat-msg-list');
+      if (muteBox) muteBox.replaceChildren(h('p', { class: 'hint' }, 'Seu nível não permite moderar o chat.'));
+      if (msgBox) msgBox.replaceChildren();
+    }
+  }
+
+  async function deleteChatAdminMsg(m) {
+    if (!confirm('Apagar esta mensagem do chat?')) return;
+    try {
+      await api(`/api/admin/chat/${m.id}`, { method: 'DELETE' });
+      toast('Mensagem apagada');
+      m.deleted = true;
+      renderChatMessages();
+    } catch (e) {
+      handleError(e);
+    }
+  }
+
+  async function unmuteChatUser(m) {
+    if (!confirm(`Tirar o silêncio de ${m.name}?`)) return;
+    try {
+      await api(`/api/admin/chat/mute/${m.userId}`, { method: 'DELETE' });
+      toast(`${m.name} pode voltar a escrever`);
+      chatAdmin.mutes = chatAdmin.mutes.filter((x) => x.userId !== m.userId);
+      renderChatMutes();
+    } catch (e) {
+      handleError(e);
+    }
+  }
+
+  async function muteChatUser(u) {
+    const duration = prompt(
+      `Silenciar ${u.name}?\nDigite a duração: 1h, 24h ou permanente`,
+      '24h'
+    );
+    if (duration == null) return;
+    const raw = String(duration).trim().toLowerCase();
+    let d = 'permanent';
+    if (raw === '1h' || raw === '1') d = '1h';
+    else if (raw === '24h' || raw === '24') d = '24h';
+    else if (raw === 'permanente' || raw === 'permanent' || raw === 'p') d = 'permanent';
+    else {
+      toast('Duração inválida. Use 1h, 24h ou permanente.', true);
+      return;
+    }
+    const reason = prompt('Motivo (opcional):', '') || '';
+    try {
+      await api('/api/admin/chat/mute', {
+        method: 'POST',
+        body: { userId: u.id, duration: d, reason: reason.trim() || undefined },
+      });
+      toast(`${u.name} silenciado`);
+      await loadChatAdmin();
+    } catch (e) {
+      handleError(e);
+    }
+  }
+
+  const chatRefreshBtn = $('#chat-refresh');
+  if (chatRefreshBtn) chatRefreshBtn.addEventListener('click', () => loadChatAdmin());
+
   bindFlag('#notify-global', 'notify', 'notify', 'Notificações de enquete nova ligadas', 'Notificações de enquete nova desligadas', renderNotify);
   bindFlag('#notify-result', 'notifyResult', 'notifyResult', 'Aviso de resultado ligado', 'Aviso de resultado desligado', renderNotify);
   bindFlag('#notify-closing', 'notifyClosing', 'notifyClosing', 'Lembrete de enquete fechando ligado', 'Lembrete de enquete fechando desligado', renderNotify);
