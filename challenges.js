@@ -1,15 +1,15 @@
 'use strict';
 
-/* Desafios 1 contra 1 valendo pontos do ranking geral.
+/* X1 Bolado valendo pontos do ranking geral.
 
    Dois tipos:
    - 'poll'   : em cima de uma enquete aberta. Cada lado fica com uma opção diferente; quando o admin define a
                 resposta certa, quem estiver nela leva a aposta do outro. Se nenhuma das duas for a certa
                 (enquete com 3+ opções ou "a casa ganha"), empata e cada um fica com os seus pontos.
-   - 'custom' : desafio livre ("quem vence a partida?"). Um mediador (um participante ou o admin) decide quem
+   - 'custom' : X1 Bolado livre ("quem vence a partida?"). Um mediador (um participante ou o admin) decide quem
                 ganhou e paga o lado certo.
 
-   Pontos: o valor apostado de cada lado fica travado (sai do saldo para apostar) enquanto o desafio estiver
+   Pontos: o valor apostado de cada lado fica travado (sai do saldo para apostar) enquanto o X1 Bolado estiver
    pendente (só quem desafiou) ou ativo (os dois). Quando é decidido, o vencedor soma `stake` e o perdedor
    perde `stake` no ranking geral e no semanal (ver computeStandings / computeWeeklyStandings no server.js). */
 
@@ -53,7 +53,7 @@ module.exports = function setupChallenges(d) {
       const { rows } = await q('select endpoint, p256dh, auth from push_subscriptions where user_id = $1', [userId]);
       await sendPush(rows, { url: '/#desafios', ...payload });
     } catch (e) {
-      console.error('[desafios] push falhou:', e.message);
+      console.error('[X1 Bolados] push falhou:', e.message);
     }
   }
 
@@ -97,7 +97,7 @@ module.exports = function setupChallenges(d) {
     };
   }
 
-  // Opções que o desafiado pode escolher (todas, menos a de quem desafiou) em desafios de enquete pendentes
+  // Opções que o desafiado pode escolher (todas, menos a de quem desafiou) em X1 Bolados de enquete pendentes
   async function attachChoices(rows, views) {
     const need = views.filter((v) => v.kind === 'poll' && v.role === 'opponent' && v.status === 'pending' && v.pollId);
     if (!need.length) return;
@@ -111,9 +111,9 @@ module.exports = function setupChallenges(d) {
     }
   }
 
-  /* ---------- Liquidação de desafios de enquete ---------- */
+  /* ---------- Liquidação de X1 Bolados de enquete ---------- */
   // Chamado quando a enquete recebe (ou troca) a resposta certa, e depois de "reabrir e zerar".
-  // Sem resposta, o desafio volta a ficar ativo; com resposta, quem estava na opção certa ganha.
+  // Sem resposta, o X1 Bolado volta a ficar ativo; com resposta, quem estava na opção certa ganha.
   async function settlePollChallenges(pollId) {
     const { rows: pr } = await q('select correct_option_id, cancelled, resolved_at from polls where id = $1', [pollId]);
     const p = pr[0];
@@ -139,15 +139,15 @@ module.exports = function setupChallenges(d) {
   async function notifyResult(c) {
     const { rows } = await q('select id, display_name from users where id = any($1::text[])', [[c.creator_id, c.opponent_id]]);
     const name = (id) => rows.find((r) => r.id === id)?.display_name || 'o outro participante';
-    const title = short(c.title || 'Desafio', 60);
+    const title = short(c.title || 'X1 Bolado', 60);
     for (const id of [c.creator_id, c.opponent_id]) {
       const other = name(id === c.creator_id ? c.opponent_id : c.creator_id);
       if (!c.winner_id) {
-        pushTo(id, { title: '⚔️ Desafio empatado', body: `"${title}" contra ${other}: ninguém perde pontos.` });
+        pushTo(id, { title: '⚔️ X1 Bolado empatado', body: `"${title}" contra ${other}: ninguém perde pontos.` });
       } else if (c.winner_id === id) {
-        pushTo(id, { title: '⚔️ Você ganhou o desafio!', body: `+${c.stake} pontos contra ${other} em "${title}".` });
+        pushTo(id, { title: '⚔️ Você ganhou o X1 Bolado!', body: `+${c.stake} pontos contra ${other} em "${title}".` });
       } else {
-        pushTo(id, { title: '⚔️ Desafio perdido', body: `−${c.stake} pontos contra ${other} em "${title}".` });
+        pushTo(id, { title: '⚔️ X1 Bolado perdido', body: `−${c.stake} pontos contra ${other} em "${title}".` });
       }
     }
   }
@@ -156,7 +156,7 @@ module.exports = function setupChallenges(d) {
     `update challenges set status = 'cancelled', winner_id = null, resolved_at = null
      where poll_id = $1 and (status in ('pending', 'active') or ($2::boolean and status = 'settled'))`,
     [pollId, includeSettled]);
-  // Reabrir mantendo os pontos: o resultado dos desafios fica gravado e eles se soltam da enquete
+  // Reabrir mantendo os pontos: o resultado dos X1 Bolados fica gravado e eles se soltam da enquete
   const detachSettledOfPoll = (client, pollId) => run(client,
     "update challenges set poll_id = null where poll_id = $1 and status = 'settled'", [pollId]);
 
@@ -174,12 +174,12 @@ module.exports = function setupChallenges(d) {
     if (!Number.isInteger(stake) || stake < 1 || stake > 1000000) {
       return { error: 'Informe quantos pontos quer apostar (número inteiro, mínimo 1).' };
     }
-    if (cap && stake > cap) return { error: `O valor máximo de um desafio é ${cap} ${cap === 1 ? 'ponto' : 'pontos'}.` };
+    if (cap && stake > cap) return { error: `O valor máximo de um X1 Bolado é ${cap} ${cap === 1 ? 'ponto' : 'pontos'}.` };
     return { stake };
   }
 
   const gate = wrap(async (req, res, next) => {
-    if (!(await enabled())) return res.status(403).json({ error: 'Os desafios estão desligados no momento.' });
+    if (!(await enabled())) return res.status(403).json({ error: 'Os X1 Bolados estão desligados no momento.' });
     next();
   });
 
@@ -212,7 +212,7 @@ module.exports = function setupChallenges(d) {
   app.post('/api/challenges', requireUser, gate, limit('challenge', 30, 60 * 1000), wrap(async (req, res) => {
     const body = req.body || {};
     const kind = body.kind === 'poll' ? 'poll' : body.kind === 'custom' ? 'custom' : null;
-    if (!kind) return res.status(400).json({ error: 'Tipo de desafio inválido.' });
+    if (!kind) return res.status(400).json({ error: 'Tipo de X1 Bolado inválido.' });
 
     const parsed = parseStake(body, await maxStake());
     if (parsed.error) return res.status(400).json({ error: parsed.error });
@@ -223,7 +223,7 @@ module.exports = function setupChallenges(d) {
     const opponent = await loadParticipant(opponentId);
     if (!opponent) return res.status(400).json({ error: 'Escolha um participante para desafiar.' });
 
-    const f = { kind, title: '', description: '', creatorSide: '', pollId: null, creatorOptionId: null, mediatorId: null, hours: DEFAULT_HOURS };
+    const f = { kind, title: '', description: '', creatorSide: '', pollId: null, creatorOptionId: null, opponentOptionId: null, opponentSide: '', mediatorId: null, hours: DEFAULT_HOURS };
     let pollCloses = null;
 
     if (kind === 'poll') {
@@ -231,9 +231,10 @@ module.exports = function setupChallenges(d) {
       if (!poll || !poll.visible) return res.status(404).json({ error: 'Enquete não encontrada.' });
       if (pollStatus(poll) !== 'open') return res.status(409).json({ error: 'Só dá para desafiar em enquetes com a votação aberta.' });
       const options = poll.options.filter((o) => !o.isHouse);
-      if (options.length < 2) return res.status(400).json({ error: 'Esta enquete não tem opções suficientes para um desafio.' });
+      if (options.length < 2) return res.status(400).json({ error: 'Esta enquete não tem opções suficientes para um X1 Bolado.' });
       const mine = options.find((o) => o.id === String(body.optionId ?? ''));
       if (!mine) return res.status(400).json({ error: 'Escolha a sua opção.' });
+      // O desafiado escolhe o lado dele na hora de aceitar (qualquer opção diferente da sua)
       Object.assign(f, { title: poll.title, creatorSide: mine.text, pollId: poll.id, creatorOptionId: mine.id });
       pollCloses = poll.closesAt ? Date.parse(poll.closesAt) : null;
     } else {
@@ -241,7 +242,7 @@ module.exports = function setupChallenges(d) {
       f.description = text(body.description, 300);
       f.creatorSide = text(body.creatorSide, 60);
       f.opponentSide = text(body.opponentSide, 60);
-      if (f.title.length < 3) return res.status(400).json({ error: 'Escreva o desafio (mínimo 3 letras).' });
+      if (f.title.length < 3) return res.status(400).json({ error: 'Escreva o X1 Bolado (mínimo 3 letras).' });
       if (!f.creatorSide || !f.opponentSide) return res.status(400).json({ error: 'Preencha o lado de cada um.' });
       if (f.creatorSide.toLowerCase() === f.opponentSide.toLowerCase()) return res.status(400).json({ error: 'Os dois lados precisam ser diferentes.' });
       const mid = String(body.mediatorId ?? '');
@@ -264,7 +265,7 @@ module.exports = function setupChallenges(d) {
       await c.query('select pg_advisory_xact_lock(hashtext($1))', [req.user.id]);
       await expireChallenges(c);
       const pending = (await c.query("select count(*)::int as n from challenges where creator_id = $1 and status = 'pending'", [req.user.id])).rows[0].n;
-      if (pending >= MAX_PENDING_PER_USER) return { status: 429, error: `Você já tem ${MAX_PENDING_PER_USER} desafios esperando resposta. Aguarde ou cancele algum.` };
+      if (pending >= MAX_PENDING_PER_USER) return { status: 429, error: `Você já tem ${MAX_PENDING_PER_USER} X1 Bolados esperando resposta. Aguarde ou cancele algum.` };
       if (f.pollId) {
         const dup = await c.query(
           "select 1 from challenges where poll_id = $1 and creator_id = $2 and opponent_id = $3 and status = 'pending'",
@@ -279,10 +280,10 @@ module.exports = function setupChallenges(d) {
       }
       const id = uid();
       await c.query(
-        `insert into challenges (id, kind, creator_id, opponent_id, mediator_id, poll_id, creator_option_id,
+        `insert into challenges (id, kind, creator_id, opponent_id, mediator_id, poll_id, creator_option_id, opponent_option_id,
                                  title, description, creator_side, opponent_side, stake, expires_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-        [id, f.kind, req.user.id, opponentId, f.mediatorId, f.pollId, f.creatorOptionId,
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+        [id, f.kind, req.user.id, opponentId, f.mediatorId, f.pollId, f.creatorOptionId, f.opponentOptionId,
           f.title, f.description, f.creatorSide, f.opponentSide, stake, new Date(expiresAt)]
       );
       return { id };
@@ -295,15 +296,15 @@ module.exports = function setupChallenges(d) {
     res.status(201).json({ ok: true, id: out.id });
   }));
 
-  // Carrega o desafio e confere o papel da pessoa; devolve { row } ou { status, error }
+  // Carrega o X1 Bolado e confere o papel da pessoa; devolve { row } ou { status, error }
   async function mine(req, role, client = null) {
     const { rows } = await run(client, `select * from challenges where id = $1${client ? ' for update' : ''}`, [req.params.id]);
     const row = rows[0];
-    if (!row) return { status: 404, error: 'Desafio não encontrado.' };
+    if (!row) return { status: 404, error: 'X1 Bolado não encontrado.' };
     const ok = role === 'creator' ? row.creator_id === req.user.id
       : role === 'opponent' ? row.opponent_id === req.user.id
       : role === 'mediator' ? row.mediator_id === req.user.id : false;
-    if (!ok) return { status: 403, error: 'Você não pode fazer isso neste desafio.' };
+    if (!ok) return { status: 403, error: 'Você não pode fazer isso neste X1 Bolado.' };
     return { row };
   }
 
@@ -313,7 +314,7 @@ module.exports = function setupChallenges(d) {
     let opponentOption = null;
     if (pre.row.kind === 'poll') {
       const [poll] = await fetchPolls('where id = $1', [pre.row.poll_id || '']);
-      if (!poll || pollStatus(poll) !== 'open') return res.status(409).json({ error: 'A votação desta enquete já encerrou. O desafio não vale mais.' });
+      if (!poll || pollStatus(poll) !== 'open') return res.status(409).json({ error: 'A votação desta enquete já encerrou. O X1 Bolado não vale mais.' });
       const choices = poll.options.filter((o) => !o.isHouse && o.id !== pre.row.creator_option_id);
       if (!choices.length) return res.status(409).json({ error: 'Não sobrou opção para você nesta enquete.' });
       opponentOption = choices.length === 1 ? choices[0] : choices.find((o) => o.id === String(req.body?.optionId ?? ''));
@@ -328,12 +329,12 @@ module.exports = function setupChallenges(d) {
       for (const id of [row.creator_id, row.opponent_id].sort()) await c.query('select pg_advisory_xact_lock(hashtext($1))', [id]);
       await expireChallenges(c);
       const fresh = (await c.query('select status from challenges where id = $1', [row.id])).rows[0];
-      if (fresh.status === 'expired') return { status: 409, error: 'Este desafio expirou.' };
-      if (fresh.status !== 'pending') return { status: 409, error: 'Este desafio já foi respondido.' };
+      if (fresh.status === 'expired') return { status: 409, error: 'Este X1 Bolado expirou.' };
+      if (fresh.status !== 'pending') return { status: 409, error: 'Este X1 Bolado já foi respondido.' };
       const free = points - (await lockedStakes(c, req.user.id));
       if (row.stake > free) {
         const n = Math.max(0, free);
-        return { status: 400, error: `Saldo insuficiente: você tem ${n} ${n === 1 ? 'ponto disponível' : 'pontos disponíveis'} e o desafio vale ${row.stake}.` };
+        return { status: 400, error: `Saldo insuficiente: você tem ${n} ${n === 1 ? 'ponto disponível' : 'pontos disponíveis'} e o X1 Bolado vale ${row.stake}.` };
       }
       await c.query(
         `update challenges set status = 'active', accepted_at = now(),
@@ -346,7 +347,7 @@ module.exports = function setupChallenges(d) {
     });
     if (out.error) return res.status(out.status).json({ error: out.error });
     broadcast();
-    pushTo(out.row.creator_id, { title: '⚔️ Desafio aceito!', body: `${short(req.user.display_name, 40)} topou "${short(out.row.title, 80)}" valendo ${out.row.stake} pts.` });
+    pushTo(out.row.creator_id, { title: '⚔️ X1 Bolado aceito!', body: `${short(req.user.display_name, 40)} topou "${short(out.row.title, 80)}" valendo ${out.row.stake} pts.` });
     res.json({ ok: true });
   }));
 
@@ -354,9 +355,9 @@ module.exports = function setupChallenges(d) {
     const cur = await mine(req, 'opponent');
     if (cur.error) return res.status(cur.status).json({ error: cur.error });
     const r = await q("update challenges set status = 'declined' where id = $1 and status = 'pending'", [cur.row.id]);
-    if (!r.rowCount) return res.status(409).json({ error: 'Este desafio já foi respondido ou expirou.' });
+    if (!r.rowCount) return res.status(409).json({ error: 'Este X1 Bolado já foi respondido ou expirou.' });
     broadcast();
-    pushTo(cur.row.creator_id, { title: 'Desafio recusado', body: `${short(req.user.display_name, 40)} recusou "${short(cur.row.title, 80)}". Seus pontos foram liberados.` });
+    pushTo(cur.row.creator_id, { title: 'X1 Bolado recusado', body: `${short(req.user.display_name, 40)} recusou "${short(cur.row.title, 80)}". Seus pontos foram liberados.` });
     res.json({ ok: true });
   }));
 
@@ -364,7 +365,7 @@ module.exports = function setupChallenges(d) {
     const cur = await mine(req, 'creator');
     if (cur.error) return res.status(cur.status).json({ error: cur.error });
     const r = await q("update challenges set status = 'cancelled' where id = $1 and status = 'pending'", [cur.row.id]);
-    if (!r.rowCount) return res.status(409).json({ error: 'Só dá para cancelar enquanto o desafio espera resposta.' });
+    if (!r.rowCount) return res.status(409).json({ error: 'Só dá para cancelar enquanto o X1 Bolado espera resposta.' });
     broadcast();
     res.json({ ok: true });
   }));
@@ -378,13 +379,13 @@ module.exports = function setupChallenges(d) {
     if (!WINNER_KEYS.includes(key)) return res.status(400).json({ error: 'Diga quem ganhou (ou empate).' });
     const cur = await mine(req, 'mediator');
     if (cur.error) return res.status(cur.status).json({ error: cur.error });
-    if (cur.row.kind !== 'custom') return res.status(409).json({ error: 'Este desafio é decidido pela enquete.' });
+    if (cur.row.kind !== 'custom') return res.status(409).json({ error: 'Este X1 Bolado é decidido pela enquete.' });
     const winner = winnerFor(cur.row, key);
     const r = await q(
       "update challenges set status = 'settled', winner_id = $2, resolved_at = now() where id = $1 and status = 'active'",
       [cur.row.id, winner]
     );
-    if (!r.rowCount) return res.status(409).json({ error: 'Só dá para decidir um desafio que já foi aceito e ainda não tem resultado.' });
+    if (!r.rowCount) return res.status(409).json({ error: 'Só dá para decidir um X1 Bolado que já foi aceito e ainda não tem resultado.' });
     await computeStandings(); // grava na hora conquistas/prêmios que esse resultado destravar
     broadcast();
     notifyResult({ ...cur.row, winner_id: winner });
@@ -396,10 +397,10 @@ module.exports = function setupChallenges(d) {
     const cur = await mine(req, 'mediator');
     if (cur.error) return res.status(cur.status).json({ error: cur.error });
     const r = await q("update challenges set status = 'cancelled' where id = $1 and status in ('pending', 'active')", [cur.row.id]);
-    if (!r.rowCount) return res.status(409).json({ error: 'Este desafio já terminou.' });
+    if (!r.rowCount) return res.status(409).json({ error: 'Este X1 Bolado já terminou.' });
     broadcast();
     for (const id of [cur.row.creator_id, cur.row.opponent_id]) {
-      pushTo(id, { title: 'Desafio anulado', body: `O mediador anulou "${short(cur.row.title, 80)}". Os pontos foram devolvidos.` });
+      pushTo(id, { title: 'X1 Bolado anulado', body: `O mediador anulou "${short(cur.row.title, 80)}". Os pontos foram devolvidos.` });
     }
     res.json({ ok: true });
   }));
@@ -428,15 +429,15 @@ module.exports = function setupChallenges(d) {
     res.json({ ok: true });
   }));
 
-  // Admin decide (ou corrige) o vencedor de um desafio livre
+  // Admin decide (ou corrige) o vencedor de um X1 Bolado livre
   app.post('/api/admin/challenges/:id/resolve', requirePerm('challenges'), wrap(async (req, res) => {
     const key = String(req.body?.winner ?? '');
     if (!WINNER_KEYS.includes(key)) return res.status(400).json({ error: 'Diga quem ganhou (ou empate).' });
     const { rows } = await q('select * from challenges where id = $1', [req.params.id]);
     const row = rows[0];
-    if (!row) return res.status(404).json({ error: 'Desafio não encontrado.' });
-    if (row.kind !== 'custom') return res.status(409).json({ error: 'Este desafio é decidido pelo resultado da enquete.' });
-    if (!['active', 'settled'].includes(row.status)) return res.status(409).json({ error: 'Só dá para decidir um desafio aceito.' });
+    if (!row) return res.status(404).json({ error: 'X1 Bolado não encontrado.' });
+    if (row.kind !== 'custom') return res.status(409).json({ error: 'Este X1 Bolado é decidido pelo resultado da enquete.' });
+    if (!['active', 'settled'].includes(row.status)) return res.status(409).json({ error: 'Só dá para decidir um X1 Bolado aceito.' });
     const winner = winnerFor(row, key);
     await q("update challenges set status = 'settled', winner_id = $2, resolved_at = now() where id = $1", [row.id, winner]);
     await computeStandings();
@@ -450,13 +451,13 @@ module.exports = function setupChallenges(d) {
       "update challenges set status = 'cancelled', winner_id = null, resolved_at = null where id = $1 and status in ('pending', 'active', 'settled')",
       [req.params.id]
     );
-    if (!r.rowCount) return res.status(409).json({ error: 'Este desafio já está encerrado sem pontos em jogo.' });
+    if (!r.rowCount) return res.status(409).json({ error: 'Este X1 Bolado já está encerrado sem pontos em jogo.' });
     res.json({ ok: true });
   }));
 
   app.delete('/api/admin/challenges/:id', requirePerm('challenges'), wrap(async (req, res) => {
     const r = await q('delete from challenges where id = $1', [req.params.id]);
-    if (!r.rowCount) return res.status(404).json({ error: 'Desafio não encontrado.' });
+    if (!r.rowCount) return res.status(404).json({ error: 'X1 Bolado não encontrado.' });
     res.json({ ok: true });
   }));
 

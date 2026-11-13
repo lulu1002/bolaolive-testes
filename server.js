@@ -76,7 +76,7 @@ const pool = new Pool({
 pool.on('error', (e) => console.error('Erro no pool do Postgres:', e.message));
 
 const q = (text, params) => pool.query(text, params);
-let challenges = null; // módulo dos desafios, criado mais abaixo (challenges.js)
+let challenges = null; // módulo dos X1 Bolados, criado mais abaixo (challenges.js)
 
 async function tx(fn) {
   const client = await pool.connect();
@@ -149,7 +149,7 @@ const PERMISSIONS = [
   { key: 'bot', group: 'Outros', label: 'Bot da Twitch (conectar, configurar e testar)' },
   { key: 'backup', group: 'Outros', label: 'Baixar backup' },
   { key: 'chat', group: 'Outros', label: 'Moderar o chat (apagar mensagens e silenciar)' },
-  { key: 'challenges', group: 'Outros', label: 'Desafios 1 contra 1 (ligar/desligar, decidir, anular e excluir)' },
+  { key: 'challenges', group: 'Outros', label: 'X1 Bolado (ligar/desligar, decidir, anular e excluir)' },
 ];
 const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);
 
@@ -626,7 +626,7 @@ async function syncPrizes(list, openPrizes, removed, reachByUser) {
   return byUser;
 }
 
-/* Resultado dos desafios já decididos (com vencedor), uma linha por participante: +aposta para quem ganhou,
+/* Resultado dos X1 Bolados já decididos (com vencedor), uma linha por participante: +aposta para quem ganhou,
    −aposta para quem perdeu. Empate (sem vencedor), pendente, recusado e anulado não mexem em pontos. */
 const CHALLENGE_RESULTS_SQL = `select r.user_id, r.delta, r.at, r.title, r.versus, r.my_side
   from (
@@ -743,7 +743,7 @@ async function computeStandings() {
       continue;
     }
     if (r.kind === 'challenge') {
-      // Desafio 1 contra 1: mexe só nos pontos (não conta como palpite, acerto nem sequência)
+      // X1 Bolado: mexe só nos pontos (não conta como palpite, acerto nem sequência)
       s.points += r.delta;
       s.challengeNet += r.delta;
       if (r.delta > 0) s.challengesWon += 1; else s.challengesLost += 1;
@@ -857,7 +857,7 @@ async function computeWeeklyStandings() {
 
   const byUser = new Map(totals.rows.map((r) => [r.user_id, r]));
   const adjByUser = new Map(adj.rows.map((r) => [r.user_id, r.delta]));
-  for (const r of chal.rows) adjByUser.set(r.user_id, (adjByUser.get(r.user_id) || 0) + r.delta); // desafios entram como ajuste de pontos
+  for (const r of chal.rows) adjByUser.set(r.user_id, (adjByUser.get(r.user_id) || 0) + r.delta); // X1 Bolados entram como ajuste de pontos
   const list = users.rows.map((u) => {
     const t = byUser.get(u.id);
     return {
@@ -1047,10 +1047,10 @@ const ADMIN_ACTIONS = [
   ['POST', /^\/chat\/purge-deleted$/, 'Removeu do banco as mensagens apagadas do chat'],
   ['POST', /^\/chat\/mute$/, 'Silenciou um usuário no chat', (b, c) => `${c.user || ''} (${b?.duration || 'permanent'})${b?.reason ? ` — ${b.reason}` : ''}`],
   ['DELETE', /^\/chat\/mute\/[^/]+$/, 'Tirou o silêncio de um usuário no chat', (b, c) => c.user],
-  ['POST', /^\/challenges\/config$/, 'Mudou a configuração dos desafios', (b) => Object.keys(b || {}).map((k) => `${k}=${b[k]}`).join(', ')],
-  ['POST', /^\/challenges\/[^/]+\/resolve$/, 'Decidiu o vencedor de um desafio', (b, c) => `${c.title || ''} → ${b?.winner}`],
-  ['POST', /^\/challenges\/[^/]+\/void$/, 'Anulou um desafio (pontos devolvidos)', (b, c) => c.title],
-  ['DELETE', /^\/challenges\/[^/]+$/, 'Excluiu um desafio', (b, c) => c.title],
+  ['POST', /^\/challenges\/config$/, 'Mudou a configuração dos X1 Bolados', (b) => Object.keys(b || {}).map((k) => `${k}=${b[k]}`).join(', ')],
+  ['POST', /^\/challenges\/[^/]+\/resolve$/, 'Decidiu o vencedor de um X1 Bolado', (b, c) => `${c.title || ''} → ${b?.winner}`],
+  ['POST', /^\/challenges\/[^/]+\/void$/, 'Anulou um X1 Bolado (pontos devolvidos)', (b, c) => c.title],
+  ['DELETE', /^\/challenges\/[^/]+$/, 'Excluiu um X1 Bolado', (b, c) => c.title],
   ['POST', /^\/bot\/config$/, 'Mudou a configuração do bot da Twitch'],
   ['POST', /^\/bot\/test$/, 'Enviou mensagem de teste do bot'],
   ['POST', /^\/bot\/disconnect$/, 'Desconectou a conta do bot'],
@@ -1480,7 +1480,7 @@ async function lockedStakes(client, userId, exceptPollId = '') {
      where v.user_id = $1 and v.stake is not null and p.correct_option_id is null and not p.cancelled and p.id <> $2`,
     [userId, exceptPollId]
   );
-  // Desafios: quem desafiou trava os pontos já na proposta; o desafiado, só depois de aceitar
+  // X1 Bolados: quem desafiou trava os pontos já na proposta; o desafiado, só depois de aceitar
   const ch = await client.query(
     `select coalesce(sum(stake), 0)::int as n from challenges
      where (status = 'active' and (creator_id = $1 or opponent_id = $1))
@@ -1916,7 +1916,7 @@ app.post('/api/admin/polls/:id/cancel', requirePerm('polls_resolve'), wrap(async
     if (!rows.length) return 'notfound';
     if (rows[0].cancelled) return 'already';
     await c.query('update polls set cancelled = true, closed = true, correct_option_id = null, resolved_at = null where id = $1', [req.params.id]);
-    await challenges.cancelAllOfPoll(c, req.params.id, true); // desafios dessa enquete: tudo devolvido
+    await challenges.cancelAllOfPoll(c, req.params.id, true); // X1 Bolados dessa enquete: tudo devolvido
     return 'ok';
   });
   if (result === 'notfound') return notFound(res);
@@ -1941,7 +1941,7 @@ app.post('/api/admin/polls/:id/reopen', requirePerm('polls_resolve'), wrap(async
       );
       await c.query('delete from votes where poll_id = $1', [req.params.id]);
     }
-    if (scoring && choice === 'keep') await challenges.detachSettledOfPoll(c, req.params.id); // resultado dos desafios fica gravado
+    if (scoring && choice === 'keep') await challenges.detachSettledOfPoll(c, req.params.id); // resultado dos X1 Bolados fica gravado
     if (scoring && choice === 'zero') {
       await c.query('delete from awards where poll_id = $1', [req.params.id]);
     }
@@ -1956,7 +1956,7 @@ app.post('/api/admin/polls/:id/reopen', requirePerm('polls_resolve'), wrap(async
   });
   if (result === 'notfound') return notFound(res);
   if (result === 'choose') return res.status(400).json({ error: 'Escolha o que fazer com os pontos desta enquete.' });
-  if (choice === 'zero') await challenges.settlePollChallenges(req.params.id); // sem resposta: desafios voltam a ficar ativos
+  if (choice === 'zero') await challenges.settlePollChallenges(req.params.id); // sem resposta: X1 Bolados voltam a ficar ativos
   res.json({ ok: true });
 }));
 
@@ -2036,7 +2036,7 @@ app.post('/api/admin/polls/:id/resolve', requirePerm('polls_resolve'), wrap(asyn
     [req.params.id, optionId]
   );
   if (!r.rowCount) return notFound(res);
-  await challenges.settlePollChallenges(req.params.id); // desafios dessa enquete: o vencedor leva a aposta do outro
+  await challenges.settlePollChallenges(req.params.id); // X1 Bolados dessa enquete: o vencedor leva a aposta do outro
   await computeStandings(); // grava na hora os emblemas desbloqueados com este resultado
   // Só avisa na primeira vez que a enquete recebe resposta (corrigir a resposta não reenvia)
   if (!prev.rows[0]?.correct_option_id) {
@@ -2129,7 +2129,7 @@ app.delete('/api/admin/polls/:id', requirePerm('polls_delete'), wrap(async (req,
       );
     }
     // "zero": não grava nada em awards, então os pontos dela não valem mais nada
-    // Desafios: com "manter" os já decididos ficam gravados (soltam-se da enquete); o resto é devolvido
+    // X1 Bolados: com "manter" os já decididos ficam gravados (soltam-se da enquete); o resto é devolvido
     await challenges.cancelAllOfPoll(c, req.params.id, !(scoring && choice === 'keep'));
     await c.query('delete from polls where id = $1', [req.params.id]);
     return 'ok';
@@ -3307,7 +3307,7 @@ app.get('/api/admin/chat/messages', requirePerm('chat'), wrap(async (req, res) =
   });
 }));
 
-/* ---------- Desafios 1 contra 1 (ver challenges.js) ---------- */
+/* ---------- X1 Bolado (ver challenges.js) ---------- */
 // `challenges` é usado pelas rotas de enquete acima só durante requisições, quando já está pronto.
 challenges = require('./challenges')({
   app, q, tx, wrap, uid, limit, requireUser, requireAdmin, requirePerm, broadcast,

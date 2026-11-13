@@ -1787,7 +1787,7 @@
     }
   });
 
-  /* ---------- Aba Desafios ---------- */
+  /* ---------- Aba X1 Bolados ---------- */
   const CHAL_ADMIN_STATUS = { pending: 'Esperando resposta', active: 'Valendo', settled: 'Decidido', declined: 'Recusado', cancelled: 'Anulado', expired: 'Expirado' };
   const chalAdmin = { list: [], enabled: true, maxStake: null };
 
@@ -1819,7 +1819,7 @@
       : ['declined', 'cancelled', 'expired'].includes(c.status)));
     box.replaceChildren();
     if (!list.length) {
-      box.append(h('p', { class: 'hint' }, 'Nenhum desafio nesta lista.'));
+      box.append(h('p', { class: 'hint' }, 'Nenhum X1 Bolado nesta lista.'));
       return;
     }
     box.append(...list.map((c) => {
@@ -1853,19 +1853,19 @@
       ? `${who} ganhou "${c.title}"? Ele leva ${c.stake} pts do outro lado.${c.status === 'settled' ? ' Isso corrige o resultado já registrado.' : ''}`
       : `Declarar empate em "${c.title}"? Ninguém perde pontos.`;
     if (!confirm(msg)) return;
-    chalAdminAct(() => api(`/api/admin/challenges/${c.id}/resolve`, { method: 'POST', body: { winner } }), 'Resultado do desafio registrado');
+    chalAdminAct(() => api(`/api/admin/challenges/${c.id}/resolve`, { method: 'POST', body: { winner } }), 'Resultado do X1 Bolado registrado');
   }
 
   function chalVoid(c) {
     const extra = c.status === 'settled' ? ' Os pontos que ele já deu ou tirou saem do ranking.' : '';
     if (!confirm(`Anular "${c.title}"? Os pontos voltam para os dois.${extra}`)) return;
-    chalAdminAct(() => api(`/api/admin/challenges/${c.id}/void`, { method: 'POST' }), 'Desafio anulado. Pontos devolvidos');
+    chalAdminAct(() => api(`/api/admin/challenges/${c.id}/void`, { method: 'POST' }), 'X1 Bolado anulado. Pontos devolvidos');
   }
 
   function chalDelete(c) {
     const extra = c.status === 'settled' && c.winnerId ? ' Os pontos que ele deu/tirou saem do ranking.' : '';
     if (!confirm(`Excluir "${c.title}" de vez?${extra}`)) return;
-    chalAdminAct(() => api(`/api/admin/challenges/${c.id}`, { method: 'DELETE' }), 'Desafio excluído');
+    chalAdminAct(() => api(`/api/admin/challenges/${c.id}`, { method: 'DELETE' }), 'X1 Bolado excluído');
   }
 
   $('#chal-enabled').addEventListener('change', async (e) => {
@@ -1873,7 +1873,7 @@
     try {
       await api('/api/admin/challenges/config', { method: 'POST', body: { enabled: value } });
       chalAdmin.enabled = value;
-      toast(value ? 'Desafios ligados no site' : 'Desafios desligados no site');
+      toast(value ? 'X1 Bolados ligados no site' : 'X1 Bolados desligados no site');
     } catch (err) {
       e.target.checked = !value;
       handleError(err);

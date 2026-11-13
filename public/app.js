@@ -34,14 +34,14 @@
     chatMedia: { images: true, videos: true, embedLinks: true },
     chatAttach: null, // { url, type }
     nameColors: [],
-    // desafios
+    // X1 Bolados
     challenges: [],
     challengesEnabled: true,
     challengesError: null,
     challengeBalance: null,
     challengeMax: null,
     challengeUsers: null,
-    challengePick: {}, // lado escolhido ao aceitar um desafio de enquete: { [challengeId]: optionId }
+    challengePick: {}, // lado escolhido ao aceitar um X1 Bolado de enquete: { [challengeId]: optionId }
     challengesPreferCustom: false,
   };
 
@@ -855,7 +855,7 @@
       return h('li', {},
         h('div', {},
           h('span', { class: 'nm' }, i.title),
-          h('span', { class: 'hits' }, `Desafio contra ${i.versus}${i.chosen ? ` · seu lado: ${i.chosen}` : ''}`)),
+          h('span', { class: 'hits' }, `X1 Bolado contra ${i.versus}${i.chosen ? ` · seu lado: ${i.chosen}` : ''}`)),
         h('div', { class: 'hist-res' },
           h('span', { class: `pill ${i.hit ? 'hit' : 'miss'}` }, i.hit ? `Ganhou +${i.points}` : `Perdeu ${i.points}`)));
     }
@@ -918,7 +918,7 @@
     if (p.challengesWon || p.challengesLost) {
       const net = p.challengeNet;
       box.append(h('p', { class: 'note' },
-        `⚔️ Desafios: ${p.challengesWon} ${p.challengesWon === 1 ? 'vitória' : 'vitórias'} e ${p.challengesLost} ${p.challengesLost === 1 ? 'derrota' : 'derrotas'} · saldo ${net > 0 ? '+' : ''}${net} pts.`));
+        `⚔️ X1 Bolados: ${p.challengesWon} ${p.challengesWon === 1 ? 'vitória' : 'vitórias'} e ${p.challengesLost} ${p.challengesLost === 1 ? 'derrota' : 'derrotas'} · saldo ${net > 0 ? '+' : ''}${net} pts.`));
     }
 
     if (p.hall && p.hall.podiums) {
@@ -971,7 +971,7 @@
         : h('div', { class: 'empty' }, h('p', {}, 'Nenhum palpite resolvido ainda.')));
   }
 
-  /* ---------- Desafios 1 contra 1 ---------- */
+  /* ---------- X1 Bolado ---------- */
   const CHAL_STATUS = {
     pending: 'Esperando resposta', active: 'Valendo', settled: 'Encerrado',
     declined: 'Recusado', cancelled: 'Anulado', expired: 'Expirado',
@@ -983,7 +983,7 @@
     return state.challengeUsers;
   }
 
-  // Quantos desafios estão esperando uma ação sua (responder ou decidir como mediador)
+  // Quantos X1 Bolados estão esperando uma ação sua (responder ou decidir como mediador)
   const challengeTodo = () => state.challenges.filter((c) => (c.role === 'opponent' && c.status === 'pending')
     || (c.role === 'mediator' && c.status === 'active')).length;
 
@@ -1064,25 +1064,25 @@
       return;
     }
     const side = c.choices && c.choices.length ? (c.choices.find((o) => o.id === (pick || c.choices[0].id)) || {}).text : c.opponentSide;
-    const ok = await askConfirm('Aceitar o desafio?', [
+    const ok = await askConfirm('Aceitar o X1 Bolado?', [
       c.title,
       `Você fica com: ${side}`,
       `Valendo ${c.stake} pts de cada lado. Depois de aceitar, os pontos ficam travados até sair o resultado.`,
-    ], 'Aceitar desafio');
+    ], 'Aceitar X1 Bolado');
     if (!ok) return;
     delete state.challengePick[c.id];
-    challengeAction(c, 'accept', pick ? { optionId: pick } : {}, 'Desafio aceito. Boa sorte!');
+    challengeAction(c, 'accept', pick ? { optionId: pick } : {}, 'X1 Bolado aceito. Boa sorte!');
   }
 
   async function declineChallenge(c) {
-    if (await askConfirm('Recusar o desafio?', `${c.creator.name} vai receber os pontos de volta.`, 'Recusar')) {
-      challengeAction(c, 'decline', null, 'Desafio recusado');
+    if (await askConfirm('Recusar o X1 Bolado?', `${c.creator.name} vai receber os pontos de volta.`, 'Recusar')) {
+      challengeAction(c, 'decline', null, 'X1 Bolado recusado');
     }
   }
 
   async function cancelChallenge(c) {
-    if (await askConfirm('Cancelar o desafio?', 'Seus pontos são liberados na hora.', 'Cancelar desafio')) {
-      challengeAction(c, 'cancel', null, 'Desafio cancelado');
+    if (await askConfirm('Cancelar o X1 Bolado?', 'Seus pontos são liberados na hora.', 'Cancelar X1 Bolado')) {
+      challengeAction(c, 'cancel', null, 'X1 Bolado cancelado');
     }
   }
 
@@ -1096,8 +1096,8 @@
   }
 
   async function voidChallenge(c) {
-    const ok = await askConfirm('Desistir de mediar?', 'O desafio é anulado e os pontos voltam para os dois.', 'Anular desafio');
-    if (ok) challengeAction(c, 'void', null, 'Desafio anulado');
+    const ok = await askConfirm('Desistir de mediar?', 'O X1 Bolado é anulado e os pontos voltam para os dois.', 'Anular X1 Bolado');
+    if (ok) challengeAction(c, 'void', null, 'X1 Bolado anulado');
   }
 
   function challengeCard(c) {
@@ -1129,26 +1129,25 @@
       else if (myLoss) result = h('p', { class: 'chal-result miss' }, `Você perdeu −${c.stake} pts`);
       else result = h('p', { class: 'chal-result' }, `${(c.winnerId === c.creator.id ? c.creator : c.opponent).name} levou ${c.stake} pts`);
     } else if (c.status === 'declined') result = h('p', { class: 'chal-meta' }, 'Os pontos foram liberados.');
-    else if (c.status === 'cancelled') result = h('p', { class: 'chal-meta' }, 'Desafio anulado: os pontos foram devolvidos.');
+    else if (c.status === 'cancelled') result = h('p', { class: 'chal-meta' }, 'X1 Bolado anulado: os pontos foram devolvidos.');
     else if (c.status === 'expired') result = h('p', { class: 'chal-meta' }, 'Ninguém respondeu a tempo: os pontos foram liberados.');
 
     const actions = [];
     if (c.role === 'opponent' && c.status === 'pending') {
       if (c.kind === 'poll' && c.choices && c.choices.length > 1) {
-        const sel = h('select', {
+        actions.push(h('select', {
           class: 'chal-select', 'aria-label': 'Seu lado',
           onchange: (e) => { state.challengePick[c.id] = e.target.value; },
         },
           h('option', { value: '' }, 'Escolha o seu lado…'),
-          c.choices.map((o) => h('option', { value: o.id, selected: state.challengePick[c.id] === o.id }, o.text)));
-        actions.push(sel);
+          c.choices.map((o) => h('option', { value: o.id, selected: state.challengePick[c.id] === o.id }, o.text))));
       }
       actions.push(
         h('button', { class: 'btn small', type: 'button', onclick: () => acceptChallenge(c) }, 'Aceitar'),
         h('button', { class: 'btn ghost small', type: 'button', onclick: () => declineChallenge(c) }, 'Recusar'));
     }
     if (c.role === 'creator' && c.status === 'pending') {
-      actions.push(h('button', { class: 'btn ghost small', type: 'button', onclick: () => cancelChallenge(c) }, 'Cancelar desafio'));
+      actions.push(h('button', { class: 'btn ghost small', type: 'button', onclick: () => cancelChallenge(c) }, 'Cancelar X1 Bolado'));
     }
     if (c.role === 'mediator' && c.kind === 'custom' && c.status === 'active') {
       actions.push(
@@ -1184,7 +1183,7 @@
     const box = $('#challenges');
     box.replaceChildren();
     if (!state.challengesEnabled) {
-      box.append(h('div', { class: 'empty' }, h('p', {}, 'Os desafios estão desligados no momento.')));
+      box.append(h('div', { class: 'empty' }, h('p', {}, 'Os X1 Bolados estão desligados no momento.')));
       return;
     }
     if (!state.user) {
@@ -1202,11 +1201,11 @@
     box.append(
       h('div', { class: 'chal-head' },
         h('p', { class: 'note' }, 'Saldo para apostar: ', h('b', {}, `${state.challengeBalance == null ? '…' : state.challengeBalance} pts`),
-          state.challengeMax ? ` · Máximo por desafio: ${state.challengeMax} pts` : ''),
-        h('button', { class: 'btn', type: 'button', onclick: () => openChallengeDialog({}) }, '➕ Novo desafio')),
+          state.challengeMax ? ` · Máximo por X1 Bolado: ${state.challengeMax} pts` : ''),
+        h('button', { class: 'btn', type: 'button', onclick: () => openChallengeDialog({}) }, '➕ Novo X1 Bolado')),
       h('p', { class: 'note chal-intro' },
-        'Aposte pontos do ranking contra outro participante. Numa enquete aberta, cada um fica com uma opção e quem estiver na certa leva os pontos do outro. ' +
-        'Num desafio livre, um mediador (outro participante ou o admin) decide quem ganhou e paga o lado certo.'));
+        'Aposte pontos do ranking contra outro participante. Numa enquete aberta, cada um fica com uma opção (o desafiado escolhe a dele ao aceitar) e quem estiver na certa leva os pontos do outro. ' +
+        'Num X1 Bolado livre, um mediador (outro participante ou o admin) decide quem ganhou e paga o lado certo.'));
 
     const sections = [
       challengeSection('Para você responder', list.filter((c) => c.role === 'opponent' && isPending(c)), 'Aceitar trava seus pontos até sair o resultado.'),
@@ -1216,8 +1215,8 @@
       challengeSection('Encerrados', list.filter((c) => !['pending', 'active'].includes(c.status)).slice(0, 30)),
     ].filter(Boolean);
     if (!sections.length) {
-      box.append(h('div', { class: 'empty' }, h('p', {}, 'Você ainda não tem desafios. Que tal chamar alguém pra uma aposta?'),
-        h('button', { class: 'btn', type: 'button', onclick: () => openChallengeDialog({}) }, '➕ Novo desafio')));
+      box.append(h('div', { class: 'empty' }, h('p', {}, 'Você ainda não tem X1 Bolados. Que tal chamar alguém pra uma aposta?'),
+        h('button', { class: 'btn', type: 'button', onclick: () => openChallengeDialog({}) }, '➕ Novo X1 Bolado')));
       return;
     }
     box.append(...sections);
@@ -1262,13 +1261,13 @@
       toast(e.message, true);
       return;
     }
-    if (!state.challengesEnabled) { toast('Os desafios estão desligados no momento.', true); return; }
+    if (!state.challengesEnabled) { toast('Os X1 Bolados estão desligados no momento.', true); return; }
 
     const openPolls = state.polls.filter((p) => p.status === 'open' && p.options.length >= 2);
     const d = {
       kind: poll || (openPolls.length && !state.challengesPreferCustom) ? 'poll' : 'custom',
       pollId: poll ? poll.id : (openPolls[0] ? openPolls[0].id : null),
-      optionId: null, opponent: null, mediator: 'admin', stake: '', hours: 48,
+      optionId: null, opponentOptionId: null, opponent: null, mediator: 'admin', stake: '', hours: 48,
       title: '', description: '', creatorSide: '', opponentSide: '',
     };
     if (!openPolls.length && !poll) d.kind = 'custom';
@@ -1284,14 +1283,14 @@
     const body = h('div', {});
     const overlay = h('div', { id: 'chal-dialog', class: 'confirm-overlay', onclick: (e) => { if (e.target === overlay) close(); } },
       h('div', { class: 'confirm-box chal-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'chal-dlg-title' },
-        h('h3', { id: 'chal-dlg-title' }, '⚔️ Novo desafio'), body));
+        h('h3', { id: 'chal-dlg-title' }, '⚔️ Novo X1 Bolado'), body));
 
     const balance = () => state.challengeBalance || 0;
     const cap = () => (state.challengeMax ? Math.min(balance(), state.challengeMax) : balance());
 
     function stakeField(previewEl) {
       const input = h('input', {
-        type: 'number', min: 1, max: cap(), step: 1, inputmode: 'numeric', value: d.stake, placeholder: 'Pontos', 'aria-label': 'Pontos do desafio',
+        type: 'number', min: 1, max: cap(), step: 1, inputmode: 'numeric', value: d.stake, placeholder: 'Pontos', 'aria-label': 'Pontos do X1 Bolado',
         oninput: (e) => { d.stake = e.target.value; previewEl.update(); },
       });
       const quick = [['¼', 0.25], ['½', 0.5], ['Tudo', 1]].map(([lbl, f]) => h('button', {
@@ -1310,7 +1309,7 @@
         const v = Number.isInteger(n) && n > 0 ? n : null;
         const who = d.opponent ? d.opponent.name : 'o desafiado';
         el.textContent = d.kind === 'poll'
-          ? `Você aposta ${v ?? 'N'} pts contra ${who}, cada um numa opção diferente. Quem estiver na opção certa leva os pontos do outro. Se nenhuma das duas for a certa, ninguém perde. Seus pontos ficam travados desde já.`
+          ? `Você aposta ${v ?? 'N'} pts contra ${who}, ele escolhe o lado dele ao aceitar, numa opção diferente da sua. Quem estiver na opção certa leva os pontos do outro. Se nenhuma das duas for a certa, ninguém perde. Seus pontos ficam travados desde já.`
           : `Você aposta ${v ?? 'N'} pts contra ${who}. O mediador decide quem ganhou e o vencedor leva os pontos do outro. Seus pontos ficam travados desde já.`;
       };
       el.update();
@@ -1335,13 +1334,13 @@
           parts.push(h('p', { class: 'confirm-pick' }, p.title));
         }
         const opts = p.options.filter((o) => !o.isHouse);
-        parts.push(h('div', { class: 'field' }, h('label', {}, 'Seu lado (o outro fica com uma opção diferente)'),
+        parts.push(h('div', { class: 'field' }, h('label', {}, 'Seu lado (o desafiado escolhe o lado dele ao aceitar)'),
           h('div', { class: 'chal-radios', role: 'radiogroup' }, opts.map((o) => h('label', { class: `chal-radio${d.optionId === o.id ? ' on' : ''}` },
             h('input', { type: 'radio', name: 'chal-opt', value: o.id, checked: d.optionId === o.id, onchange: () => { d.optionId = o.id; draw(); } }),
             o.text)))));
       } else {
         parts.push(
-          h('div', { class: 'field' }, h('label', { for: 'chal-title-in' }, 'O desafio'),
+          h('div', { class: 'field' }, h('label', { for: 'chal-title-in' }, 'O X1 Bolado'),
             h('input', { id: 'chal-title-in', maxlength: 120, value: d.title, placeholder: 'Ex.: Quem vence o jogo de hoje?', oninput: (e) => { d.title = e.target.value; } })),
           h('div', { class: 'field' }, h('label', { for: 'chal-desc-in' }, 'Detalhes (opcional)'),
             h('textarea', { id: 'chal-desc-in', maxlength: 300, rows: 2, placeholder: 'Regras, horário, como vai ser decidido…', oninput: (e) => { d.description = e.target.value; } }, d.description)),
@@ -1376,7 +1375,7 @@
       parts.push(stakeField(pv), pv, err,
         h('div', { class: 'confirm-actions' },
           h('button', { class: 'btn ghost', type: 'button', onclick: close }, 'Fechar'),
-          h('button', { class: 'btn', type: 'button', id: 'chal-send', onclick: submit }, 'Enviar desafio')));
+          h('button', { class: 'btn', type: 'button', id: 'chal-send', onclick: submit }, 'Enviar X1 Bolado')));
       body.replaceChildren(...parts.filter(Boolean));
     }
 
@@ -1384,7 +1383,7 @@
       err.textContent = '';
       if (!d.opponent) { err.textContent = 'Escolha quem você quer desafiar.'; return; }
       const stake = Number(d.stake);
-      if (!Number.isInteger(stake) || stake < 1) { err.textContent = 'Informe os pontos do desafio (número inteiro).'; return; }
+      if (!Number.isInteger(stake) || stake < 1) { err.textContent = 'Informe os pontos do X1 Bolado (número inteiro).'; return; }
       let payload;
       if (d.kind === 'custom' && d.mediator !== 'admin' && d.mediator.id === d.opponent.id) { err.textContent = 'O mediador precisa ser uma terceira pessoa.'; return; }
       if (d.kind === 'poll') {
@@ -1401,7 +1400,7 @@
       try {
         await api('/api/challenges', { method: 'POST', body: payload });
         close();
-        toast(`Desafio enviado para ${d.opponent.name}`);
+        toast(`X1 Bolado enviado para ${d.opponent.name}`);
         await loadChallenges();
         loadPolls();
         navigate('#desafios');
