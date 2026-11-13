@@ -93,7 +93,7 @@ button, input, textarea { font: inherit; }
 .top { background: var(--ticket); border-bottom: 2px solid var(--ink); }
 .top .wrap {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas: "brand tabs who";
   align-items: end;
   gap: 0.5rem 1.75rem;
@@ -110,8 +110,21 @@ button, input, textarea { font: inherit; }
   letter-spacing: -0.01em;
   text-decoration: none;
 }
-.tabs { grid-area: tabs; display: flex; gap: 1.4rem; }
+.tabs {
+  grid-area: tabs;
+  display: flex;
+  gap: 1.4rem;
+  min-width: 0;              /* deixa o item do grid encolher em vez de alargar a página */
+  max-width: 100%;
+  overflow-x: auto;          /* rolagem lateral somente na barra de abas */
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
 .tabs button {
+  flex: none;
+  white-space: nowrap;
   padding: 0.6rem 0.75rem 0.45rem;
   border: 0;
   border-bottom: 4px solid transparent;
@@ -173,7 +186,7 @@ button, input, textarea { font: inherit; }
 .who .avatar { width: 1.85rem; height: 1.85rem; }
 
 @media (max-width: 640px) {
-  .top .wrap { grid-template-columns: 1fr; grid-template-areas: "brand" "who" "tabs"; }
+  .top .wrap { grid-template-columns: minmax(0, 1fr); grid-template-areas: "brand" "who" "tabs"; }
   .brand { font-size: 2.3rem; }
   .head-actions { justify-content: flex-start; flex-wrap: wrap; padding-bottom: 0.75rem; }
   .me-name { overflow-wrap: normal; }
