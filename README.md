@@ -65,6 +65,22 @@ O botão **Cancelar e devolver pontos** (permissão “encerrar, reabrir e defin
 
 Na aba Criar do admin, a caixa **Não deixar o participante trocar o voto** (desligada por padrão) impede qualquer troca depois do primeiro voto ou aposta, em todas as enquetes.
 
+## Desafios (aposta 1 contra 1)
+
+Aba **⚔️ Desafios** no site (e botão **⚔️ Desafiar alguém nesta enquete** em cada enquete aberta). Um participante desafia outro valendo pontos do **ranking geral**; cada um aposta o mesmo valor.
+
+**Dois tipos:**
+- **Numa enquete aberta:** quem desafia escolhe a sua opção; o desafiado fica com uma opção diferente (se sobrar só uma, entra nela; se sobrarem várias, ele escolhe ao aceitar). Quando o admin define a resposta certa, quem estiver nela **leva os pontos do outro**. Se nenhuma das duas for a certa (enquete com 3+ opções ou "a casa ganha"), empata e ninguém perde. Se o admin trocar a resposta depois, o desafio é recalculado; se cancelar a enquete, tudo é devolvido.
+- **Com mediador (desafio livre):** o desafiante escreve o desafio e o lado de cada um e escolhe um **mediador** — outro participante (uma terceira pessoa) ou o **admin**. O mediador decide quem ganhou (ou empate) e o vencedor leva os pontos do outro. O mediador pode desistir de mediar (tudo é anulado e devolvido). O admin pode decidir, corrigir ou anular pela aba **⚔️ Desafios** do painel.
+
+**Fluxo e pontos:** o desafio nasce *pendente* (os pontos de quem desafiou já ficam travados); o desafiado pode **aceitar** (trava os pontos dele também), **recusar** ou deixar expirar (prazo escolhido ao criar: 6 h a 7 dias; em desafio de enquete, no máximo até o fechamento da enquete). Pontos travados saem do saldo para apostar (o mesmo saldo das enquetes com odd, então ninguém aposta o que não tem). Ao decidir, o vencedor soma o valor e o perdedor perde o valor no ranking geral **e** no semanal, no histórico do perfil (⚔️) e nos prêmios únicos. Desafio **não** conta como palpite: não mexe em acertos, sequência nem conquistas.
+
+**Avisos:** o desafiado, o mediador e os dois lados recebem notificação push (se ligada) e a aba mostra uma bolinha com quantos desafios esperam resposta ou decisão. Limites: 10 desafios pendentes por pessoa; não dá para desafiar a si mesmo, contas da casa, banidos nem contas de teste.
+
+**Admin:** aba **⚔️ Desafios** (permissão própria "Desafios 1 contra 1", que o dono pode dar aos outros admins): liga/desliga o recurso, define um valor máximo por desafio, lista tudo com filtros e permite decidir/corrigir (desafio livre), **anular** (devolve os pontos, até de um já decidido) e **excluir**. Tudo entra no Histórico de ações.
+
+O banco é atualizado sozinho no deploy (tabela `challenges`, no `schema.sql`; o backup também inclui os desafios). O código das rotas fica em `challenges.js`.
+
 ## Painel de testes
 
 Na aba **🧪 Testes** do admin você cria contas fictícias (com pontos iniciais), faz cada uma votar ou apostar, faz todas votarem aleatoriamente de uma vez e dá ±100 pontos. Elas aparecem no ranking com 🧪, não levam prêmio único nem entram no pódio, e **Apagar contas de teste** remove tudo delas. Evite zerar o ranking semanal com contas de teste ativas.

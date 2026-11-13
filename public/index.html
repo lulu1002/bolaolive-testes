@@ -20,6 +20,7 @@
         <button type="button" role="tab" id="tab-polls" aria-controls="view-polls" aria-selected="true">Enquetes</button>
         <button type="button" role="tab" id="tab-ranking" aria-controls="view-ranking" aria-selected="false">Ranking</button>
         <button type="button" role="tab" id="tab-prizes" aria-controls="view-prizes" aria-selected="false" hidden>Prêmios</button>
+        <button type="button" role="tab" id="tab-challenges" aria-controls="view-challenges" aria-selected="false" hidden>⚔️ Desafios<span id="chal-badge" class="chal-badge" hidden>0</span></button>
       </nav>
       <div class="head-actions">
         <button id="theme-toggle" class="icon-btn" type="button" title="Mudar o tema" aria-label="Mudar o tema">🌙</button>
@@ -50,6 +51,10 @@
       <div id="prizes"></div>
     </section>
 
+    <section id="view-challenges" role="tabpanel" aria-labelledby="tab-challenges" hidden>
+      <div id="challenges"></div>
+    </section>
+
     <section id="view-profile" hidden>
       <div id="profile"></div>
     </section>
@@ -57,16 +62,8 @@
 
   <div id="toast" role="status" aria-live="polite"></div>
 
-  <!-- Botões fixos: identidade (cor) acima do chat -->
+  <!-- Botão fixo do chat -->
   <div class="fab-stack" id="fab-stack">
-    <div class="identity-fab-wrap">
-      <button id="identity-toggle" class="identity-fab" type="button" title="Cor do nome" aria-label="Escolher cor do nome" aria-haspopup="true" hidden>🎨</button>
-      <div id="identity-menu" class="identity-menu" hidden role="menu">
-        <h4>Cor do nome</h4>
-        <div id="identity-swatches" class="identity-swatches"></div>
-        <p class="identity-hint">Aparece no chat, ranking e perfil.</p>
-      </div>
-    </div>
     <button id="chat-toggle" class="chat-fab" type="button" title="Abrir chat" aria-label="Abrir chat" hidden>
       <span class="chat-fab-icon" aria-hidden="true">💬</span>
       <span id="chat-badge" class="chat-badge" hidden>0</span>

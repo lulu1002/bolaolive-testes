@@ -10,6 +10,7 @@
     topics: [],
     pollTopic: null,
     lockVotes: false,
+    showCreated: true,
     balance: null,
     bet: {}, // rascunho da aposta por enquete: { [pollId]: { optionId, stake } }
     pollsError: null,
@@ -33,6 +34,15 @@
     chatMedia: { images: true, videos: true, embedLinks: true },
     chatAttach: null, // { url, type }
     nameColors: [],
+    // desafios
+    challenges: [],
+    challengesEnabled: true,
+    challengesError: null,
+    challengeBalance: null,
+    challengeMax: null,
+    challengeUsers: null,
+    challengePick: {}, // lado escolhido ao aceitar um desafio de enquete: { [challengeId]: optionId }
+    challengesPreferCustom: false,
   };
 
   /* ---------- Utilidades ---------- */
@@ -173,6 +183,13 @@
   const fmtDate = (iso) =>
     new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
+  // Data e hora de criação, com dia da semana e ano (ex.: quarta, 11/11/2026 às 14:32)
+  const WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+  const fmtCreated = (iso) => {
+    const d = new Date(iso);
+    return `${WEEKDAYS[d.getDay()]}, ${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+  };
+
   const MEDAL = { 1: '🥇', 2: '🥈', 3: '🥉' };
   function weekLabel(w) {
     const day = (iso) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
@@ -236,58 +253,48 @@
       box.append(h('a', { class: 'btn twitch small', href: '/auth/twitch' }, 'Entrar com a Twitch'));
     }
     if (typeof updateChatFab === 'function') updateChatFab();
-    if (typeof updateIdentityFab === 'function') updateIdentityFab();
   }
 
-  function renderIdentityMenu() {
-    const box = $('#identity-swatches');
-    const menu = $('#identity-menu');
-    if (!box || !menu) return;
+  // Seletor de cor do nome: aparece só no perfil da própria pessoa
+  function colorPickerEl() {
     const color = state.user?.nameColor || null;
     const colors = state.nameColors.length ? state.nameColors : [{ id: 'default', label: 'Padrão', value: null }];
-    box.replaceChildren(...colors.map((c) => {
-      const selected = (color || null) === (c.value || null);
-      const attrs = {
-        class: `identity-swatch${selected ? ' selected' : ''}`,
-        type: 'button',
-        title: c.label,
-        'data-color': c.id,
-        'aria-label': c.label,
-        onclick: (e) => {
-          e.stopPropagation();
-          setNameColor(c.value);
-        },
-      };
-      if (c.value) attrs.style = `background: ${c.value}`;
-      return h('button', attrs);
-    }));
-  }
+    const isPreset = colors.some((c) => (c.value || null) === (color || null));
+    const isCustom = Boolean(color) && !isPreset;
 
-  function updateIdentityFab() {
-    const btn = $('#identity-toggle');
-    if (!btn) return;
-    btn.hidden = !state.user;
-    if (!state.user) {
-      const menu = $('#identity-menu');
-      if (menu) menu.hidden = true;
-    } else {
-      renderIdentityMenu();
-    }
-  }
-
-  function setupIdentityFab() {
-    const btn = $('#identity-toggle');
-    if (!btn) return;
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (!state.user) return;
-      const menu = $('#identity-menu');
-      if (!menu) return;
-      renderIdentityMenu();
-      menu.hidden = !menu.hidden;
+    // Seletor nativo (quadrado de degradê + slider de matiz). Salva ao confirmar a cor.
+    const picker = h('input', {
+      type: 'color',
+      class: 'identity-picker-input',
+      value: (color || '#3498DB').toLowerCase(),
+      'aria-label': 'Escolher qualquer cor',
     });
-  }
+    const dot = h('span', { class: `identity-swatch identity-custom${isCustom ? ' selected' : ''}` }, picker);
+    if (isCustom) dot.style.background = color;
+    picker.addEventListener('input', () => { dot.style.background = picker.value; });
+    picker.addEventListener('change', () => setNameColor(picker.value.toUpperCase()));
 
+    return h('section', { class: 'profile-color' },
+      h('h3', { class: 'section-title' }, 'Cor do nome'),
+      h('div', { class: 'identity-swatches' }, colors.map((c) => {
+        const selected = (color || null) === (c.value || null);
+        const attrs = {
+          class: `identity-swatch${selected ? ' selected' : ''}`,
+          type: 'button',
+          title: c.label,
+          'data-color': c.id,
+          'aria-label': c.label,
+          'aria-pressed': String(selected),
+          onclick: () => setNameColor(c.value),
+        };
+        if (c.value) attrs.style = `background: ${c.value}`;
+        return h('button', attrs);
+      })),
+      h('label', { class: 'identity-custom-row' },
+        dot,
+        h('span', {}, 'Outra cor (escolha qualquer uma)')),
+      h('p', { class: 'identity-hint' }, 'Aparece no chat, ranking e perfil.'));
+  }
 
   async function setNameColor(value) {
     try {
@@ -296,10 +303,11 @@
         body: { color: value == null ? 'default' : value },
       });
       if (data.user) state.user = data.user;
-      const menu = $('#identity-menu');
-      if (menu) menu.hidden = true;
+      if (state.profile && state.user && state.profile.userId === state.user.id) {
+        state.profile.nameColor = state.user.nameColor || null;
+      }
       renderWho();
-      updateIdentityFab();
+      if (state.view === 'profile') renderProfile();
       if (state.chatOpen) renderChatMessages(false);
       if (state.view === 'ranking') loadRanking();
       toast('Cor do nome atualizada');
@@ -312,6 +320,11 @@
   async function logout() {
     try { await api('/api/logout', { method: 'POST' }); } catch (_) { /* segue */ }
     state.user = null;
+    state.challenges = [];
+    state.challengeBalance = null;
+    state.challengeUsers = null;
+    renderChallengeTab();
+    if (state.view === 'challenges') renderChallenges();
     state.chatMessages = [];
     state.chatLoaded = false;
     state.chatCanModerate = false;
@@ -331,7 +344,13 @@
       state.polls = data.polls;
       state.topics = data.topics || [];
       state.lockVotes = Boolean(data.lockVotes);
+      state.showCreated = data.showCreated !== false;
       state.balance = data.balance == null ? null : data.balance;
+      if (data.challengesEnabled !== undefined) {
+        state.challengesEnabled = Boolean(data.challengesEnabled);
+        renderChallengeTab();
+        if (!state.challengesEnabled && state.view === 'challenges') renderChallenges();
+      }
       if (data.chatEnabled !== undefined) {
         state.chatEnabled = Boolean(data.chatEnabled);
         updateChatFab();
@@ -516,7 +535,11 @@
         p.description ? h('p', { class: 'desc' }, p.description) : null,
         h('div', { class: 'opts', role: 'radiogroup', 'aria-label': p.title }, p.options.map((o) => renderOption(p, o))),
         p.odds ? betBox(p) : null,
-        noteFor(p)));
+        noteFor(p),
+        p.status === 'open' && state.challengesEnabled && state.user && p.options.length >= 2
+          ? h('div', { class: 'chal-cta' }, h('button', { class: 'btn ghost small', type: 'button', onclick: () => openChallengeDialog({ poll: p }) }, '⚔️ Desafiar alguém nesta enquete'))
+          : null,
+        state.showCreated && p.createdAt ? h('p', { class: 'created-at' }, `🕒 Criada em ${fmtCreated(p.createdAt)}`) : null));
   }
 
   /* ---------- Tópicos das enquetes ---------- */
@@ -578,11 +601,48 @@
     }
   }
 
+  // Com a trava de voto ligada o voto é definitivo: pede confirmação antes de enviar
+  function confirmLockedVote(p, optionId, stake) {
+    if ($('#vote-confirm')) return Promise.resolve(false);
+    const opt = p.options.find((o) => o.id === optionId);
+    const what = p.odds ? 'aposta' : 'voto';
+    return new Promise((resolve) => {
+      const prevFocus = document.activeElement;
+      const onKey = (e) => { if (e.key === 'Escape') close(false); };
+      function close(ok) {
+        document.removeEventListener('keydown', onKey);
+        overlay.remove();
+        if (prevFocus && prevFocus.focus) prevFocus.focus({ preventScroll: true });
+        resolve(ok);
+      }
+      const back = h('button', { class: 'btn ghost', type: 'button', onclick: () => close(false) }, 'Voltar');
+      // começa travado por um instante, pra um toque duplo sem querer não confirmar
+      const ok = h('button', { class: 'btn', type: 'button', disabled: true, onclick: () => close(true) },
+        `Confirmar ${what}`);
+      setTimeout(() => { ok.disabled = false; }, 600);
+      const overlay = h('div', {
+        id: 'vote-confirm', class: 'confirm-overlay',
+        onclick: (e) => { if (e.target === overlay) close(false); },
+      },
+        h('div', { class: 'confirm-box', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'vote-confirm-title' },
+          h('h3', { id: 'vote-confirm-title' }, `Confirmar ${what}?`),
+          p.title ? h('p', { class: 'note' }, p.title) : null,
+          h('p', { class: 'confirm-pick' }, opt ? opt.text : ''),
+          p.odds ? h('p', { class: 'note' }, `Aposta: ${Number(stake) || 0} pts`) : null,
+          h('p', { class: 'note' }, `Meu Nobre Apostador Depois de confirmar, não dá para trocar o ${what} hein fofin.`),
+          h('div', { class: 'confirm-actions' }, back, ok)));
+      document.addEventListener('keydown', onKey);
+      document.body.append(overlay);
+      back.focus();
+    });
+  }
+
   async function vote(p, optionId, stake) {
     if (!state.user) {
       toast('Entre com a Twitch para dar seu palpite.');
       return;
     }
+    if (state.lockVotes && !p.myVote && !(await confirmLockedVote(p, optionId, stake))) return;
     try {
       const body = p.odds ? { optionId, stake: Number(stake) } : { optionId };
       const { poll, balance } = await api(`/api/polls/${p.id}/vote`, { method: 'POST', body });
@@ -791,6 +851,14 @@
   }
 
   function historyItem(i) {
+    if (i.challenge) {
+      return h('li', {},
+        h('div', {},
+          h('span', { class: 'nm' }, i.title),
+          h('span', { class: 'hits' }, `Desafio contra ${i.versus}${i.chosen ? ` · seu lado: ${i.chosen}` : ''}`)),
+        h('div', { class: 'hist-res' },
+          h('span', { class: `pill ${i.hit ? 'hit' : 'miss'}` }, i.hit ? `Ganhou +${i.points}` : `Perdeu ${i.points}`)));
+    }
     const detail = i.chosen
       ? `Palpite: ${i.chosen}${i.stake ? ` (${i.stake} pts)` : ''}${i.correct ? ` · Certa: ${i.correct}` : ''}`
       : 'Rodada guardada';
@@ -832,6 +900,8 @@
         stat('Pontos gerais', p.points),
         stat('Acertos', `${p.hits}/${p.played}`, p.played ? `${p.accuracy}% de aproveitamento` : ''),
         stat('Sequência', p.streak, `melhor: ${p.bestStreak}`)));
+    if (me && !p.isHouse) box.append(colorPickerEl());
+
     if (p.rule.every > 0) {
       box.append(h('p', { class: 'note' },
         `Bônus de sequência: +${p.rule.bonus} pontos a cada ${p.rule.every} acertos seguidos.` +
@@ -844,6 +914,11 @@
     if (p.misses) {
       box.append(h('p', { class: 'note' },
         `Erros: ${p.misses} · pior sequência de erros: ${p.bestMissStreak}.`));
+    }
+    if (p.challengesWon || p.challengesLost) {
+      const net = p.challengeNet;
+      box.append(h('p', { class: 'note' },
+        `⚔️ Desafios: ${p.challengesWon} ${p.challengesWon === 1 ? 'vitória' : 'vitórias'} e ${p.challengesLost} ${p.challengesLost === 1 ? 'derrota' : 'derrotas'} · saldo ${net > 0 ? '+' : ''}${net} pts.`));
     }
 
     if (p.hall && p.hall.podiums) {
@@ -896,16 +971,465 @@
         : h('div', { class: 'empty' }, h('p', {}, 'Nenhum palpite resolvido ainda.')));
   }
 
+  /* ---------- Desafios 1 contra 1 ---------- */
+  const CHAL_STATUS = {
+    pending: 'Esperando resposta', active: 'Valendo', settled: 'Encerrado',
+    declined: 'Recusado', cancelled: 'Anulado', expired: 'Expirado',
+  };
+  const CHAL_HOURS = [[6, '6 horas'], [24, '1 dia'], [48, '2 dias'], [72, '3 dias'], [168, '7 dias']];
+
+  async function loadChallengeUsers() {
+    if (!state.challengeUsers) state.challengeUsers = (await api('/api/challenges/users')).users;
+    return state.challengeUsers;
+  }
+
+  // Quantos desafios estão esperando uma ação sua (responder ou decidir como mediador)
+  const challengeTodo = () => state.challenges.filter((c) => (c.role === 'opponent' && c.status === 'pending')
+    || (c.role === 'mediator' && c.status === 'active')).length;
+
+  function renderChallengeTab() {
+    $('#tab-challenges').hidden = !state.challengesEnabled;
+    const n = state.user ? challengeTodo() : 0;
+    const badge = $('#chal-badge');
+    badge.hidden = n === 0;
+    badge.textContent = String(n);
+  }
+
+  async function loadChallenges() {
+    if (!state.user) {
+      state.challenges = [];
+      state.challengeBalance = null;
+      renderChallengeTab();
+      if (state.view === 'challenges') renderChallenges();
+      return;
+    }
+    try {
+      const d = await api('/api/challenges');
+      state.challenges = d.challenges;
+      state.challengeBalance = d.balance;
+      state.challengeMax = d.maxStake;
+      state.challengesEnabled = d.enabled !== false;
+      state.challengesError = null;
+    } catch (e) {
+      state.challengesError = e.message;
+    }
+    renderChallengeTab();
+    if (state.view === 'challenges') renderChallenges();
+  }
+
+  function personEl(p, side) {
+    return h('div', { class: 'chal-who' }, avatarEl(p.name, p.avatar, ''), h('span', { class: 'nm-txt' }, p.name));
+  }
+
+  // Caixa de confirmação simples (mesmo visual da confirmação de voto)
+  function askConfirm(title, lines, okLabel) {
+    return new Promise((resolve) => {
+      const prevFocus = document.activeElement;
+      const onKey = (e) => { if (e.key === 'Escape') close(false); };
+      function close(ok) {
+        document.removeEventListener('keydown', onKey);
+        overlay.remove();
+        if (prevFocus && prevFocus.focus) prevFocus.focus({ preventScroll: true });
+        resolve(ok);
+      }
+      const back = h('button', { class: 'btn ghost', type: 'button', onclick: () => close(false) }, 'Voltar');
+      const ok = h('button', { class: 'btn', type: 'button', disabled: true, onclick: () => close(true) }, okLabel);
+      setTimeout(() => { ok.disabled = false; }, 500);
+      const overlay = h('div', { class: 'confirm-overlay', onclick: (e) => { if (e.target === overlay) close(false); } },
+        h('div', { class: 'confirm-box', role: 'dialog', 'aria-modal': 'true' },
+          h('h3', {}, title),
+          [].concat(lines).map((l) => h('p', { class: 'note' }, l)),
+          h('div', { class: 'confirm-actions' }, back, ok)));
+      document.addEventListener('keydown', onKey);
+      document.body.append(overlay);
+      back.focus();
+    });
+  }
+
+  async function challengeAction(c, action, body, okMsg) {
+    try {
+      await api(`/api/challenges/${c.id}/${action}`, { method: 'POST', body });
+      toast(okMsg);
+    } catch (e) {
+      toast(e.message, true);
+    }
+    await loadChallenges();
+    loadPolls(); // o saldo de apostas mudou
+  }
+
+  async function acceptChallenge(c) {
+    const pick = state.challengePick[c.id];
+    if (c.kind === 'poll' && c.choices && c.choices.length > 1 && !pick) {
+      toast('Escolha o seu lado antes de aceitar.', true);
+      return;
+    }
+    const side = c.choices && c.choices.length ? (c.choices.find((o) => o.id === (pick || c.choices[0].id)) || {}).text : c.opponentSide;
+    const ok = await askConfirm('Aceitar o desafio?', [
+      c.title,
+      `Você fica com: ${side}`,
+      `Valendo ${c.stake} pts de cada lado. Depois de aceitar, os pontos ficam travados até sair o resultado.`,
+    ], 'Aceitar desafio');
+    if (!ok) return;
+    delete state.challengePick[c.id];
+    challengeAction(c, 'accept', pick ? { optionId: pick } : {}, 'Desafio aceito. Boa sorte!');
+  }
+
+  async function declineChallenge(c) {
+    if (await askConfirm('Recusar o desafio?', `${c.creator.name} vai receber os pontos de volta.`, 'Recusar')) {
+      challengeAction(c, 'decline', null, 'Desafio recusado');
+    }
+  }
+
+  async function cancelChallenge(c) {
+    if (await askConfirm('Cancelar o desafio?', 'Seus pontos são liberados na hora.', 'Cancelar desafio')) {
+      challengeAction(c, 'cancel', null, 'Desafio cancelado');
+    }
+  }
+
+  async function resolveChallenge(c, winner) {
+    const who = winner === 'creator' ? c.creator.name : winner === 'opponent' ? c.opponent.name : null;
+    const ok = await askConfirm(who ? `${who} ganhou?` : 'Declarar empate?', [
+      c.title,
+      who ? `${who} leva ${c.stake} pts do outro lado. Depois de confirmar, só o admin consegue corrigir.` : 'Ninguém perde pontos e os dois voltam ao saldo.',
+    ], 'Confirmar resultado');
+    if (ok) challengeAction(c, 'resolve', { winner }, 'Resultado registrado');
+  }
+
+  async function voidChallenge(c) {
+    const ok = await askConfirm('Desistir de mediar?', 'O desafio é anulado e os pontos voltam para os dois.', 'Anular desafio');
+    if (ok) challengeAction(c, 'void', null, 'Desafio anulado');
+  }
+
+  function challengeCard(c) {
+    const me = state.user && state.user.id;
+    const myWin = c.status === 'settled' && c.winnerId === me;
+    const myLoss = c.status === 'settled' && c.winnerId && c.winnerId !== me && (c.role === 'creator' || c.role === 'opponent');
+    const pillClass = c.status === 'pending' || c.status === 'active' ? 'open'
+      : c.status === 'settled' ? (myWin ? 'hit' : myLoss ? 'miss' : 'resolved') : 'cancelled';
+    const todo = (c.role === 'opponent' && c.status === 'pending') || (c.role === 'mediator' && c.status === 'active');
+    const over = !['pending', 'active'].includes(c.status);
+
+    const side = (p, text, key) => h('div', {
+      class: `chal-side${c.status === 'settled' && c.winnerId ? (c.winnerId === p.id ? ' win' : ' lose') : ''}`,
+    },
+      personEl(p),
+      h('span', { class: 'chal-pick' }, `${c.winnerId === p.id && c.status === 'settled' ? '🏆 ' : ''}${p.id === me ? 'Você: ' : ''}${text || 'escolhe ao aceitar'}`));
+
+    const meta = [];
+    if (c.kind === 'custom') meta.push(`⚖️ Mediador: ${c.mediator ? c.mediator.name : 'admin'}`);
+    else meta.push('📊 Decidido pelo resultado da enquete');
+    if (c.status === 'pending') meta.push(`Expira em ${fmtDate(c.expiresAt)}`);
+    else if (c.resolvedAt) meta.push(`Decidido em ${fmtDate(c.resolvedAt)}`);
+    else meta.push(`Criado em ${fmtDate(c.createdAt)}`);
+
+    let result = null;
+    if (c.status === 'settled') {
+      if (c.draw) result = h('p', { class: 'chal-result' }, 'Empate: ninguém perde pontos.');
+      else if (myWin) result = h('p', { class: 'chal-result hit' }, `Você ganhou +${c.stake} pts`);
+      else if (myLoss) result = h('p', { class: 'chal-result miss' }, `Você perdeu −${c.stake} pts`);
+      else result = h('p', { class: 'chal-result' }, `${(c.winnerId === c.creator.id ? c.creator : c.opponent).name} levou ${c.stake} pts`);
+    } else if (c.status === 'declined') result = h('p', { class: 'chal-meta' }, 'Os pontos foram liberados.');
+    else if (c.status === 'cancelled') result = h('p', { class: 'chal-meta' }, 'Desafio anulado: os pontos foram devolvidos.');
+    else if (c.status === 'expired') result = h('p', { class: 'chal-meta' }, 'Ninguém respondeu a tempo: os pontos foram liberados.');
+
+    const actions = [];
+    if (c.role === 'opponent' && c.status === 'pending') {
+      if (c.kind === 'poll' && c.choices && c.choices.length > 1) {
+        const sel = h('select', {
+          class: 'chal-select', 'aria-label': 'Seu lado',
+          onchange: (e) => { state.challengePick[c.id] = e.target.value; },
+        },
+          h('option', { value: '' }, 'Escolha o seu lado…'),
+          c.choices.map((o) => h('option', { value: o.id, selected: state.challengePick[c.id] === o.id }, o.text)));
+        actions.push(sel);
+      }
+      actions.push(
+        h('button', { class: 'btn small', type: 'button', onclick: () => acceptChallenge(c) }, 'Aceitar'),
+        h('button', { class: 'btn ghost small', type: 'button', onclick: () => declineChallenge(c) }, 'Recusar'));
+    }
+    if (c.role === 'creator' && c.status === 'pending') {
+      actions.push(h('button', { class: 'btn ghost small', type: 'button', onclick: () => cancelChallenge(c) }, 'Cancelar desafio'));
+    }
+    if (c.role === 'mediator' && c.kind === 'custom' && c.status === 'active') {
+      actions.push(
+        h('button', { class: 'btn small', type: 'button', onclick: () => resolveChallenge(c, 'creator') }, `🏆 ${c.creator.name}`),
+        h('button', { class: 'btn small', type: 'button', onclick: () => resolveChallenge(c, 'opponent') }, `🏆 ${c.opponent.name}`),
+        h('button', { class: 'btn ghost small', type: 'button', onclick: () => resolveChallenge(c, 'draw') }, 'Empate'));
+    }
+    if (c.role === 'mediator' && ['pending', 'active'].includes(c.status)) {
+      actions.push(h('button', { class: 'btn ghost small', type: 'button', onclick: () => voidChallenge(c) }, 'Desistir de mediar'));
+    }
+
+    return h('article', { class: `chal-card${todo ? ' todo' : ''}${over ? ' over' : ''}` },
+      h('div', { class: 'chal-top' },
+        h('span', { class: `pill ${pillClass}` }, c.status === 'pending' && c.role === 'opponent' ? 'Você foi desafiado' : c.role === 'mediator' && c.status === 'active' ? 'Você decide' : CHAL_STATUS[c.status]),
+        h('span', { class: 'chal-stake' }, `⚔️ ${c.stake} pts`)),
+      h('h3', { class: 'chal-title' }, c.title),
+      c.description ? h('p', { class: 'desc' }, c.description) : null,
+      h('div', { class: 'chal-vs' }, side(c.creator, c.creatorSide), h('span', { class: 'chal-x', 'aria-hidden': 'true' }, 'VS'), side(c.opponent, c.opponentSide)),
+      result,
+      h('p', { class: 'chal-meta' }, meta.join(' · ')),
+      actions.length ? h('div', { class: 'chal-actions' }, actions) : null);
+  }
+
+  function challengeSection(title, list, hint) {
+    if (!list.length) return null;
+    return h('section', {},
+      h('h3', { class: 'section-title' }, title),
+      hint ? h('p', { class: 'note' }, hint) : null,
+      h('div', { class: 'chal-list' }, list.map(challengeCard)));
+  }
+
+  function renderChallenges() {
+    const box = $('#challenges');
+    box.replaceChildren();
+    if (!state.challengesEnabled) {
+      box.append(h('div', { class: 'empty' }, h('p', {}, 'Os desafios estão desligados no momento.')));
+      return;
+    }
+    if (!state.user) {
+      box.append(h('div', { class: 'empty' },
+        h('p', {}, 'Entre com a Twitch para desafiar outros participantes e apostar pontos do ranking.'),
+        h('a', { class: 'btn twitch', href: '/auth/twitch' }, 'Entrar com a Twitch')));
+      return;
+    }
+    if (state.challengesError) {
+      box.append(h('div', { class: 'empty' }, h('p', {}, state.challengesError)));
+      return;
+    }
+    const list = state.challenges;
+    const isPending = (c) => c.status === 'pending';
+    box.append(
+      h('div', { class: 'chal-head' },
+        h('p', { class: 'note' }, 'Saldo para apostar: ', h('b', {}, `${state.challengeBalance == null ? '…' : state.challengeBalance} pts`),
+          state.challengeMax ? ` · Máximo por desafio: ${state.challengeMax} pts` : ''),
+        h('button', { class: 'btn', type: 'button', onclick: () => openChallengeDialog({}) }, '➕ Novo desafio')),
+      h('p', { class: 'note chal-intro' },
+        'Aposte pontos do ranking contra outro participante. Numa enquete aberta, cada um fica com uma opção e quem estiver na certa leva os pontos do outro. ' +
+        'Num desafio livre, um mediador (outro participante ou o admin) decide quem ganhou e paga o lado certo.'));
+
+    const sections = [
+      challengeSection('Para você responder', list.filter((c) => c.role === 'opponent' && isPending(c)), 'Aceitar trava seus pontos até sair o resultado.'),
+      challengeSection('Você é o mediador', list.filter((c) => c.role === 'mediator' && ['pending', 'active'].includes(c.status)), 'Quando tiver o resultado, escolha quem ganhou. O vencedor leva os pontos do outro lado.'),
+      challengeSection('Valendo', list.filter((c) => c.status === 'active' && c.role !== 'mediator')),
+      challengeSection('Esperando resposta', list.filter((c) => c.role === 'creator' && isPending(c))),
+      challengeSection('Encerrados', list.filter((c) => !['pending', 'active'].includes(c.status)).slice(0, 30)),
+    ].filter(Boolean);
+    if (!sections.length) {
+      box.append(h('div', { class: 'empty' }, h('p', {}, 'Você ainda não tem desafios. Que tal chamar alguém pra uma aposta?'),
+        h('button', { class: 'btn', type: 'button', onclick: () => openChallengeDialog({}) }, '➕ Novo desafio')));
+      return;
+    }
+    box.append(...sections);
+  }
+
+  /* Busca de participante (para desafiar ou mediar) */
+  function userPicker(users, { label, selectedId, exclude = [], onPick }) {
+    const input = h('input', { type: 'search', placeholder: 'Buscar por nome ou login', autocomplete: 'off', 'aria-label': label });
+    const list = h('div', { class: 'chal-userlist', role: 'listbox' });
+    const sel = h('p', { class: 'chal-selected' });
+    let current = selectedId || null;
+    const byId = new Map(users.map((u) => [u.id, u]));
+    function update() {
+      const term = input.value.trim().toLowerCase();
+      const found = users
+        .filter((u) => !exclude.includes(u.id) && (!term || u.name.toLowerCase().includes(term) || u.login.toLowerCase().includes(term)))
+        .slice(0, 30);
+      list.replaceChildren(...(found.length
+        ? found.map((u) => h('button', {
+          type: 'button', class: `chal-user${u.id === current ? ' on' : ''}`, role: 'option',
+          onclick: () => { current = u.id; onPick(u); update(); },
+        }, avatarEl(u.name, u.avatar, ''), h('span', {}, u.name, ' ', h('small', {}, `@${u.login}`))))
+        : [h('p', { class: 'note' }, 'Ninguém encontrado.')]));
+      const chosen = current && byId.get(current);
+      sel.textContent = chosen ? `Escolhido: ${chosen.name}` : '';
+    }
+    input.addEventListener('input', update);
+    update();
+    return h('div', { class: 'field' }, h('label', {}, label), input, sel, list);
+  }
+
+  async function openChallengeDialog({ poll = null }) {
+    if (!state.user) {
+      toast('Entre com a Twitch para desafiar alguém.');
+      return;
+    }
+    if ($('#chal-dialog')) return;
+    let users;
+    try {
+      [users] = await Promise.all([loadChallengeUsers(), loadChallenges()]);
+    } catch (e) {
+      toast(e.message, true);
+      return;
+    }
+    if (!state.challengesEnabled) { toast('Os desafios estão desligados no momento.', true); return; }
+
+    const openPolls = state.polls.filter((p) => p.status === 'open' && p.options.length >= 2);
+    const d = {
+      kind: poll || (openPolls.length && !state.challengesPreferCustom) ? 'poll' : 'custom',
+      pollId: poll ? poll.id : (openPolls[0] ? openPolls[0].id : null),
+      optionId: null, opponent: null, mediator: 'admin', stake: '', hours: 48,
+      title: '', description: '', creatorSide: '', opponentSide: '',
+    };
+    if (!openPolls.length && !poll) d.kind = 'custom';
+
+    const prevFocus = document.activeElement;
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    function close() {
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      if (prevFocus && prevFocus.focus) prevFocus.focus({ preventScroll: true });
+    }
+    const err = h('p', { class: 'error', role: 'alert' });
+    const body = h('div', {});
+    const overlay = h('div', { id: 'chal-dialog', class: 'confirm-overlay', onclick: (e) => { if (e.target === overlay) close(); } },
+      h('div', { class: 'confirm-box chal-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'chal-dlg-title' },
+        h('h3', { id: 'chal-dlg-title' }, '⚔️ Novo desafio'), body));
+
+    const balance = () => state.challengeBalance || 0;
+    const cap = () => (state.challengeMax ? Math.min(balance(), state.challengeMax) : balance());
+
+    function stakeField(previewEl) {
+      const input = h('input', {
+        type: 'number', min: 1, max: cap(), step: 1, inputmode: 'numeric', value: d.stake, placeholder: 'Pontos', 'aria-label': 'Pontos do desafio',
+        oninput: (e) => { d.stake = e.target.value; previewEl.update(); },
+      });
+      const quick = [['¼', 0.25], ['½', 0.5], ['Tudo', 1]].map(([lbl, f]) => h('button', {
+        type: 'button', class: 'btn ghost small',
+        onclick: () => { d.stake = String(Math.max(0, Math.floor(cap() * f))); input.value = d.stake; previewEl.update(); },
+      }, lbl));
+      return h('div', { class: 'field' },
+        h('label', {}, `Quantos pontos cada um aposta? (saldo: ${balance()} pts${state.challengeMax ? `, máximo ${state.challengeMax}` : ''})`),
+        input, h('div', { class: 'bet-row' }, quick));
+    }
+
+    function preview() {
+      const el = h('p', { class: 'chal-preview' });
+      el.update = () => {
+        const n = Number(d.stake);
+        const v = Number.isInteger(n) && n > 0 ? n : null;
+        const who = d.opponent ? d.opponent.name : 'o desafiado';
+        el.textContent = d.kind === 'poll'
+          ? `Você aposta ${v ?? 'N'} pts contra ${who}, cada um numa opção diferente. Quem estiver na opção certa leva os pontos do outro. Se nenhuma das duas for a certa, ninguém perde. Seus pontos ficam travados desde já.`
+          : `Você aposta ${v ?? 'N'} pts contra ${who}. O mediador decide quem ganhou e o vencedor leva os pontos do outro. Seus pontos ficam travados desde já.`;
+      };
+      el.update();
+      return el;
+    }
+
+    function draw() {
+      const pv = preview();
+      const kindBtns = poll ? null : h('div', { class: 'chal-kinds' },
+        h('button', { class: 'btn ghost small', type: 'button', 'aria-pressed': String(d.kind === 'poll'), disabled: !openPolls.length, title: openPolls.length ? '' : 'Não há enquete aberta agora', onclick: () => { d.kind = 'poll'; draw(); } }, '📊 Numa enquete'),
+        h('button', { class: 'btn ghost small', type: 'button', 'aria-pressed': String(d.kind === 'custom'), onclick: () => { d.kind = 'custom'; state.challengesPreferCustom = true; draw(); } }, '⚖️ Com mediador'));
+      const parts = [kindBtns];
+
+      if (d.kind === 'poll') {
+        const p = poll || openPolls.find((x) => x.id === d.pollId) || openPolls[0];
+        d.pollId = p.id;
+        if (!poll) {
+          parts.push(h('div', { class: 'field' }, h('label', {}, 'Enquete'),
+            h('select', { class: 'chal-select', onchange: (e) => { d.pollId = e.target.value; d.optionId = null; draw(); } },
+              openPolls.map((x) => h('option', { value: x.id, selected: x.id === p.id }, x.title)))));
+        } else {
+          parts.push(h('p', { class: 'confirm-pick' }, p.title));
+        }
+        const opts = p.options.filter((o) => !o.isHouse);
+        parts.push(h('div', { class: 'field' }, h('label', {}, 'Seu lado (o outro fica com uma opção diferente)'),
+          h('div', { class: 'chal-radios', role: 'radiogroup' }, opts.map((o) => h('label', { class: `chal-radio${d.optionId === o.id ? ' on' : ''}` },
+            h('input', { type: 'radio', name: 'chal-opt', value: o.id, checked: d.optionId === o.id, onchange: () => { d.optionId = o.id; draw(); } }),
+            o.text)))));
+      } else {
+        parts.push(
+          h('div', { class: 'field' }, h('label', { for: 'chal-title-in' }, 'O desafio'),
+            h('input', { id: 'chal-title-in', maxlength: 120, value: d.title, placeholder: 'Ex.: Quem vence o jogo de hoje?', oninput: (e) => { d.title = e.target.value; } })),
+          h('div', { class: 'field' }, h('label', { for: 'chal-desc-in' }, 'Detalhes (opcional)'),
+            h('textarea', { id: 'chal-desc-in', maxlength: 300, rows: 2, placeholder: 'Regras, horário, como vai ser decidido…', oninput: (e) => { d.description = e.target.value; } }, d.description)),
+          h('div', { class: 'field' }, h('label', { for: 'chal-s1' }, 'Seu lado'),
+            h('input', { id: 'chal-s1', maxlength: 60, value: d.creatorSide, placeholder: 'Ex.: Time A', oninput: (e) => { d.creatorSide = e.target.value; } })),
+          h('div', { class: 'field' }, h('label', { for: 'chal-s2' }, 'Lado do desafiado'),
+            h('input', { id: 'chal-s2', maxlength: 60, value: d.opponentSide, placeholder: 'Ex.: Time B', oninput: (e) => { d.opponentSide = e.target.value; } })));
+      }
+
+      parts.push(userPicker(users, {
+        label: 'Quem você quer desafiar?', selectedId: d.opponent && d.opponent.id,
+        exclude: d.mediator && d.mediator !== 'admin' ? [d.mediator.id] : [],
+        onPick: (u) => {
+          d.opponent = u;
+          pv.update();
+          // o mediador precisa ser uma terceira pessoa
+          if (d.kind === 'custom' && d.mediator !== 'admin' && d.mediator.id === u.id) { d.mediator = 'admin'; draw(); }
+        },
+      }));
+
+      if (d.kind === 'custom') {
+        parts.push(
+          h('div', { class: 'field' }, h('label', {}, 'Quem paga o lado certo (mediador)?'),
+            h('select', { class: 'chal-select', onchange: (e) => { d.mediator = e.target.value === 'admin' ? 'admin' : users.find((u) => u.id === e.target.value); } },
+              h('option', { value: 'admin', selected: d.mediator === 'admin' }, 'O admin decide'),
+              users.filter((u) => !d.opponent || u.id !== d.opponent.id).map((u) => h('option', { value: u.id, selected: d.mediator !== 'admin' && d.mediator.id === u.id }, `Participante: ${u.name}`)))),
+          h('div', { class: 'field' }, h('label', {}, 'Tempo para o desafiado aceitar'),
+            h('select', { class: 'chal-select', onchange: (e) => { d.hours = Number(e.target.value); } },
+              CHAL_HOURS.map(([hrs, lbl]) => h('option', { value: hrs, selected: d.hours === hrs }, lbl)))));
+      }
+
+      parts.push(stakeField(pv), pv, err,
+        h('div', { class: 'confirm-actions' },
+          h('button', { class: 'btn ghost', type: 'button', onclick: close }, 'Fechar'),
+          h('button', { class: 'btn', type: 'button', id: 'chal-send', onclick: submit }, 'Enviar desafio')));
+      body.replaceChildren(...parts.filter(Boolean));
+    }
+
+    async function submit() {
+      err.textContent = '';
+      if (!d.opponent) { err.textContent = 'Escolha quem você quer desafiar.'; return; }
+      const stake = Number(d.stake);
+      if (!Number.isInteger(stake) || stake < 1) { err.textContent = 'Informe os pontos do desafio (número inteiro).'; return; }
+      let payload;
+      if (d.kind === 'custom' && d.mediator !== 'admin' && d.mediator.id === d.opponent.id) { err.textContent = 'O mediador precisa ser uma terceira pessoa.'; return; }
+      if (d.kind === 'poll') {
+        if (!d.optionId) { err.textContent = 'Escolha o seu lado.'; return; }
+        payload = { kind: 'poll', pollId: d.pollId, optionId: d.optionId, opponentId: d.opponent.id, stake };
+      } else {
+        payload = {
+          kind: 'custom', title: d.title, description: d.description, creatorSide: d.creatorSide, opponentSide: d.opponentSide,
+          opponentId: d.opponent.id, mediatorId: d.mediator === 'admin' ? 'admin' : d.mediator.id, hours: d.hours, stake,
+        };
+      }
+      const btn = $('#chal-send');
+      btn.disabled = true;
+      try {
+        await api('/api/challenges', { method: 'POST', body: payload });
+        close();
+        toast(`Desafio enviado para ${d.opponent.name}`);
+        await loadChallenges();
+        loadPolls();
+        navigate('#desafios');
+      } catch (e) {
+        err.textContent = e.message;
+        btn.disabled = false;
+        if (e.status === 401) { state.user = null; renderWho(); }
+      }
+    }
+
+    draw();
+    document.addEventListener('keydown', onKey);
+    document.body.append(overlay);
+  }
+
   /* ---------- Navegação ---------- */
   function setView(view, profileId) {
     state.view = view;
     $('#view-polls').hidden = view !== 'polls';
     $('#view-ranking').hidden = view !== 'ranking';
     $('#view-prizes').hidden = view !== 'prizes';
+    $('#view-challenges').hidden = view !== 'challenges';
     $('#view-profile').hidden = view !== 'profile';
     $('#tab-polls').setAttribute('aria-selected', String(view === 'polls'));
     $('#tab-ranking').setAttribute('aria-selected', String(view === 'ranking' || view === 'profile'));
     $('#tab-prizes').setAttribute('aria-selected', String(view === 'prizes'));
+    $('#tab-challenges').setAttribute('aria-selected', String(view === 'challenges'));
+    if (view === 'challenges') { renderChallenges(); loadChallenges(); }
     if (view === 'ranking') loadRanking();
     if (view === 'prizes') { renderPrizesView(); loadPrizes(); }
     if (view === 'profile') {
@@ -921,7 +1445,7 @@
   function route() {
     const m = location.hash.match(/^#perfil\/([\w-]+)$/);
     if (m) setView('profile', m[1]);
-    else setView(location.hash === '#ranking' ? 'ranking' : location.hash === '#premios' ? 'prizes' : 'polls');
+    else setView(location.hash === '#ranking' ? 'ranking' : location.hash === '#premios' ? 'prizes' : location.hash === '#desafios' ? 'challenges' : 'polls');
   }
 
   function navigate(hash) {
@@ -933,11 +1457,13 @@
   $('#tab-polls').addEventListener('click', () => navigate(''));
   $('#tab-ranking').addEventListener('click', () => navigate('#ranking'));
   $('#tab-prizes').addEventListener('click', () => navigate('#premios'));
+  $('#tab-challenges').addEventListener('click', () => navigate('#desafios'));
 
   /* ---------- Atualização automática ---------- */
   function refresh() {
     loadPolls();
     loadPrizes();
+    if (state.user) loadChallenges();
     if (state.view === 'ranking') loadRanking();
     if (state.view === 'profile') loadProfile();
   }
@@ -1603,23 +2129,18 @@
     } catch (_) { /* segue como visitante */ }
     syncPushUser();
     renderWho();
-    setupIdentityFab();
-    updateIdentityFab();
     setupChat();
     updateChatFab();
     if (state.user && state.chatEnabled) loadChat(true);
     route();
     loadPolls();
     loadPrizes();
+    loadChallenges();
     connectEvents();
     // Plano B caso a conexão em tempo real caia
     setInterval(() => { if (!document.hidden) refresh(); }, 60000);
     // Celulares pausam a conexão com a aba em segundo plano: atualiza ao voltar
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
-    document.addEventListener('click', () => {
-      const menu = $('#identity-menu');
-      if (menu && !menu.hidden) menu.hidden = true;
-    });
   }
   init();
 })();
